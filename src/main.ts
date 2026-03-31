@@ -1,99 +1,136 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {
+	App,
+	Editor,
+	FuzzySuggestModal,
+	MarkdownView,
+	Notice,
+	Plugin,
+	TFile,
+	requestUrl,
+} from "obsidian";
+import {sortMp3Files} from "./audio-files";
+import {requestTranscription} from "./openrouter";
+import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
-// Remember to rename these classes and interfaces!
+export default class ObsidianSttPlugin extends Plugin {
+	settings: ObsidianSttPluginSettings;
+	private isTranscribing = false;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+			id: "transcribe-audio-file",
+			name: "Transcribe audio file into editor",
+			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+				if (!(view instanceof MarkdownView)) {
+					return false;
 				}
-				return false;
-			}
+
+				if (!checking) {
+					this.openAudioPicker(editor);
+				}
+
+				return true;
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		this.addSettingTab(new ObsidianSttSettingTab(this.app, this));
 	}
 
-	onunload() {
+	async loadSettings(): Promise<void> {
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			(await this.loadData()) as Partial<ObsidianSttPluginSettings>,
+		);
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
-	}
-
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	private openAudioPicker(editor: Editor): void {
+		const apiKey = this.settings.apiKey.trim();
+		if (!apiKey) {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			new Notice("Add your OpenRouter key in the plugin settings first.");
+			return;
+		}
+
+		const mp3Files = sortMp3Files(this.app.vault.getFiles());
+		if (mp3Files.length === 0) {
+			new Notice("No mp3 files were found in this vault.");
+			return;
+		}
+
+		new AudioFileSuggestModal(this.app, mp3Files, async (file: TFile) => {
+			await this.transcribeIntoEditor(file, editor);
+		}).open();
+	}
+
+	private async transcribeIntoEditor(file: TFile, editor: Editor): Promise<void> {
+		if (this.isTranscribing) {
+			new Notice("A transcription is already in progress.");
+			return;
+		}
+
+		this.isTranscribing = true;
+		new Notice(`Transcribing ${file.path}...`);
+
+		try {
+			const audioBuffer = await this.app.vault.readBinary(file);
+			const transcription = await requestTranscription({
+				apiKey: this.settings.apiKey,
+				audioBuffer,
+				audioPath: file.path,
+				requestUrl: async (request) => {
+					const response = await requestUrl(request);
+					return {
+						status: response.status,
+						text: response.text,
+					};
+				},
+			});
+
+			editor.replaceSelection(transcription);
+			new Notice("Transcription inserted.");
+		} catch (error) {
+			console.error("Audio transcription failed", error);
+			const message = error instanceof Error ? error.message : "Unknown transcription error.";
+			new Notice(message);
+		} finally {
+			this.isTranscribing = false;
+		}
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
+class AudioFileSuggestModal extends FuzzySuggestModal<TFile> {
+	private readonly files: TFile[];
+	private readonly onChooseFile: (file: TFile) => Promise<void>;
+
+	constructor(app: App, files: TFile[], onChooseFile: (file: TFile) => Promise<void>) {
 		super(app);
+		this.files = files;
+		this.onChooseFile = onChooseFile;
+		this.setPlaceholder("Type an mp3 path in your vault");
+		this.setInstructions([
+			{command: "Type", purpose: "Filter mp3 files by path"},
+			{command: "Enter", purpose: "Choose file"},
+			{command: "Esc", purpose: "Cancel"},
+		]);
+		this.emptyStateText = "No matching mp3 files.";
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+	getItems(): TFile[] {
+		return this.files;
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	getItemText(file: TFile): string {
+		return file.path;
+	}
+
+	onChooseItem(file: TFile): void {
+		void this.onChooseFile(file);
 	}
 }

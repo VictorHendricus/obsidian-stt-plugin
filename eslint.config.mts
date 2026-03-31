@@ -21,6 +21,19 @@ export default tseslint.config(
 			},
 		},
 	},
+	{
+		files: ["tests/**/*.ts"],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+		rules: {
+			"import/no-nodejs-modules": "off",
+			"no-console": "off",
+			"no-restricted-globals": "off",
+		},
+	},
 	...obsidianmd.configs.recommended,
 	globalIgnores([
 		"node_modules",

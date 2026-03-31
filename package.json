@@ -1,14 +1,16 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-stt-plugin",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Simple audio transcription plugin for Obsidian using OpenRouter",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"test": "node --experimental-strip-types --test tests/audio-files.test.ts tests/openrouter.test.ts",
+		"test:integration": "node --env-file=.env.test --experimental-strip-types --test tests/openrouter.integration.test.ts"
 	},
 	"keywords": [],
 	"license": "0-BSD",

@@ -3,21 +3,24 @@ export interface FilePathLike {
 	extension?: string;
 }
 
-export function isMp3FilePath(path: string): boolean {
-	return path.trim().toLowerCase().endsWith(".mp3");
+export const SUPPORTED_AUDIO_EXTENSIONS = ["m4a", "mp3"] as const;
+
+export function isSupportedAudioFilePath(path: string): boolean {
+	const normalizedPath = path.trim().toLowerCase();
+	return SUPPORTED_AUDIO_EXTENSIONS.some((extension) => normalizedPath.endsWith(`.${extension}`));
 }
 
-export function isMp3File(file: FilePathLike): boolean {
+export function isSupportedAudioFile(file: FilePathLike): boolean {
 	if (typeof file.extension === "string" && file.extension.length > 0) {
-		return file.extension.toLowerCase() === "mp3";
+		return SUPPORTED_AUDIO_EXTENSIONS.includes(file.extension.toLowerCase() as (typeof SUPPORTED_AUDIO_EXTENSIONS)[number]);
 	}
 
-	return isMp3FilePath(file.path);
+	return isSupportedAudioFilePath(file.path);
 }
 
-export function sortMp3Files<T extends FilePathLike>(files: readonly T[]): T[] {
+export function sortSupportedAudioFiles<T extends FilePathLike>(files: readonly T[]): T[] {
 	return files
-		.filter((file) => isMp3File(file))
+		.filter((file) => isSupportedAudioFile(file))
 		.slice()
 		.sort((left, right) => left.path.localeCompare(right.path, undefined, {sensitivity: "base"}));
 }

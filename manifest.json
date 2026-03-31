@@ -3,7 +3,7 @@
 	"name": "Audio Transcription",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Transcribe mp3 files from your vault into the editor with OpenRouter.",
+	"description": "Transcribe m4a or mp3 files from your vault into the editor with OpenRouter.",
 	"author": "oleksii",
 	"isDesktopOnly": false
 }

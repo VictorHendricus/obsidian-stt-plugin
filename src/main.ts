@@ -8,7 +8,7 @@ import {
 	TFile,
 	requestUrl,
 } from "obsidian";
-import {sortMp3Files} from "./audio-files";
+import {sortSupportedAudioFiles} from "./audio-files";
 import {requestTranscription} from "./openrouter";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
@@ -58,13 +58,13 @@ export default class ObsidianSttPlugin extends Plugin {
 			return;
 		}
 
-		const mp3Files = sortMp3Files(this.app.vault.getFiles());
-		if (mp3Files.length === 0) {
-			new Notice("No mp3 files were found in this vault.");
+		const audioFiles = sortSupportedAudioFiles(this.app.vault.getFiles());
+		if (audioFiles.length === 0) {
+			new Notice("No m4a or mp3 files were found in this vault.");
 			return;
 		}
 
-		new AudioFileSuggestModal(this.app, mp3Files, async (file: TFile) => {
+		new AudioFileSuggestModal(this.app, audioFiles, async (file: TFile) => {
 			await this.transcribeIntoEditor(file, editor);
 		}).open();
 	}
@@ -113,13 +113,13 @@ class AudioFileSuggestModal extends FuzzySuggestModal<TFile> {
 		super(app);
 		this.files = files;
 		this.onChooseFile = onChooseFile;
-		this.setPlaceholder("Type an mp3 path in your vault");
+		this.setPlaceholder("Type an m4a or mp3 path in your vault");
 		this.setInstructions([
-			{command: "Type", purpose: "Filter mp3 files by path"},
+			{command: "Type", purpose: "Filter m4a or mp3 files by path"},
 			{command: "Enter", purpose: "Choose file"},
 			{command: "Esc", purpose: "Cancel"},
 		]);
-		this.emptyStateText = "No matching mp3 files.";
+		this.emptyStateText = "No matching m4a or mp3 files.";
 	}
 
 	getItems(): TFile[] {

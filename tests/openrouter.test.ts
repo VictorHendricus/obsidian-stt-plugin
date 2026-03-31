@@ -18,7 +18,7 @@ void test("encodeArrayBufferToBase64 encodes raw audio bytes", () => {
 });
 
 void test("createTranscriptionRequestBody matches the OpenRouter chat format", () => {
-	const body = createTranscriptionRequestBody("ZmFrZS1hdWRpbw==", "mp3");
+	const body = createTranscriptionRequestBody("ZmFrZS1hdWRpbw==", "m4a");
 
 	assert.equal(body.model, OPENROUTER_MODEL);
 	assert.deepEqual(body.reasoning, {
@@ -30,7 +30,7 @@ void test("createTranscriptionRequestBody matches the OpenRouter chat format", (
 		type: "input_audio",
 		input_audio: {
 			data: "ZmFrZS1hdWRpbw==",
-			format: "mp3",
+			format: "m4a",
 		},
 	});
 });
@@ -72,7 +72,7 @@ void test("requestTranscription sends the expected OpenRouter request and return
 	const transcription = await requestTranscription({
 		apiKey: "test-key",
 		audioBuffer: Uint8Array.from([1, 2, 3]).buffer,
-		audioPath: "Recordings/demo.mp3",
+		audioPath: "Recordings/demo.m4a",
 		requestUrl: async (request) => {
 			capturedRequest = request;
 			return {
@@ -105,7 +105,7 @@ void test("requestTranscription sends the expected OpenRouter request and return
 
 	assert.equal(parsedBody.model, OPENROUTER_MODEL);
 	assert.equal(parsedBody.messages[0]?.content[1]?.type, "input_audio");
-	assert.equal(parsedBody.messages[0]?.content[1]?.input_audio?.format, "mp3");
+	assert.equal(parsedBody.messages[0]?.content[1]?.input_audio?.format, "m4a");
 });
 
 void test("requestTranscription surfaces provider errors", async () => {
@@ -113,7 +113,7 @@ void test("requestTranscription surfaces provider errors", async () => {
 		requestTranscription({
 			apiKey: "test-key",
 			audioBuffer: Uint8Array.from([1]).buffer,
-			audioPath: "Recordings/demo.mp3",
+			audioPath: "Recordings/demo.m4a",
 			requestUrl: async () => ({
 				status: 401,
 				text: JSON.stringify({

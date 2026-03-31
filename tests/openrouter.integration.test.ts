@@ -17,7 +17,7 @@ const fixtureFileName = process.env.OPENROUTER_AUDIO_FIXTURE?.trim() || "How to 
 const fixturePath = path.resolve("tests", fixtureFileName);
 
 void test(
-	"requestTranscription transcribes the real mp3 fixture through OpenRouter",
+	"requestTranscription transcribes the real audio fixture through OpenRouter",
 	{
 		skip: apiKey.length === 0 ? "Set OPENROUTER_API_KEY in .env.test to run this test." : false,
 		timeout: 120_000,
@@ -59,6 +59,6 @@ function toArrayBuffer(buffer: Buffer): ArrayBuffer {
 void test("integration fixture exists", async () => {
 	const audioBuffer = await readFile(fixturePath);
 	assert.ok(audioBuffer.byteLength > 0);
-	assert.equal(path.extname(fixturePath).toLowerCase(), ".mp3");
+	assert.ok([".m4a", ".mp3"].includes(path.extname(fixturePath).toLowerCase()));
 	assert.equal(OPENROUTER_CHAT_COMPLETIONS_URL, "https://openrouter.ai/api/v1/chat/completions");
 });

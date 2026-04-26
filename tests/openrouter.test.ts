@@ -40,7 +40,7 @@ void test("extractTranscriptionFromResponse supports string content", () => {
 		choices: [
 			{
 				message: {
-					content: "transcribed text",
+					content: '{"title":"Demo recording","transcription":"transcribed text"}',
 				},
 			},
 		],
@@ -55,8 +55,8 @@ void test("extractTranscriptionFromResponse supports array content blocks", () =
 			{
 				message: {
 					content: [
-						{type: "text", text: "first line"},
-						{type: "output_text", text: "second line"},
+						{type: "text", text: '{"title":"Demo recording",'},
+						{type: "output_text", text: '"transcription":"first line\\nsecond line"}'},
 					],
 				},
 			},
@@ -81,7 +81,7 @@ void test("requestTranscription sends the expected OpenRouter request and return
 					choices: [
 						{
 							message: {
-								content: "hello world",
+								content: '{"title":"Greeting","transcription":"hello world"}',
 							},
 						},
 					],
@@ -90,7 +90,10 @@ void test("requestTranscription sends the expected OpenRouter request and return
 		},
 	});
 
-	assert.equal(transcription, "hello world");
+	assert.deepEqual(transcription, {
+		title: "Greeting",
+		transcription: "hello world",
+	});
 	assert.ok(capturedRequest);
 	assert.equal(capturedRequest.url, OPENROUTER_CHAT_COMPLETIONS_URL);
 	assert.equal(capturedRequest.method, "POST");

@@ -31,11 +31,13 @@ void test(
 			requestUrl: fetchOpenRouter,
 		});
 
-		assert.match(transcription, /[A-Za-z]/, "Expected the transcription to contain human-readable text.");
-		assert.ok(transcription.trim().length >= 20, "Expected a non-trivial transcription.");
+		assert.match(transcription.transcription, /[A-Za-z]/, "Expected the transcription to contain human-readable text.");
+		assert.ok(transcription.transcription.trim().length >= 20, "Expected a non-trivial transcription.");
+		assert.match(transcription.title, /[A-Za-z]/, "Expected an English recording title.");
 
 		console.log(`Fixture: ${fixtureFileName}`);
-		console.log(`Transcription preview: ${transcription.slice(0, 200)}`);
+		console.log(`Title: ${transcription.title}`);
+		console.log(`Transcription preview: ${transcription.transcription.slice(0, 200)}`);
 	},
 );
 

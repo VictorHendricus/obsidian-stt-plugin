@@ -1,6 +1,16 @@
 export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const OPENROUTER_MODEL = "google/gemini-3.1-flash-lite-preview";
-export const TRANSCRIPTION_PROMPT = "Transcribe this audio and return transcription only.";
+export const TRANSCRIPTION_PROMPT = [
+	"Transcribe this audio and return only valid JSON.",
+	'Use this exact shape: {"title":"short English recording title","transcription":"verbatim transcription in the audio language"}.',
+	"The title must be in English no matter what language is spoken in the audio.",
+	"Do not wrap the JSON in Markdown.",
+].join(" ");
+
+export interface TranscriptionResult {
+	title: string;
+	transcription: string;
+}
 
 interface OpenRouterTextContent {
 	type: "text";
@@ -114,18 +124,27 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 	};
 }
 
-export function extractTranscriptionFromResponse(payload: unknown): string {
+export function extractTranscriptionResultFromResponse(payload: unknown): TranscriptionResult {
 	const content = getNestedValue(payload, ["choices", 0, "message", "content"]);
-	const transcription = extractTextContent(content).trim();
+	const rawText = extractTextContent(content).trim();
 
-	if (!transcription) {
+	if (!rawText) {
 		throw new Error("OpenRouter returned an empty transcription.");
 	}
 
-	return transcription;
+	const result = parseTranscriptionResult(rawText);
+	if (!result.transcription) {
+		throw new Error("OpenRouter returned an empty transcription.");
+	}
+
+	return result;
 }
 
-export async function requestTranscription(params: RequestTranscriptionParams): Promise<string> {
+export function extractTranscriptionFromResponse(payload: unknown): string {
+	return extractTranscriptionResultFromResponse(payload).transcription;
+}
+
+export async function requestTranscription(params: RequestTranscriptionParams): Promise<TranscriptionResult> {
 	const apiKey = params.apiKey.trim();
 	if (!apiKey) {
 		throw new Error("An OpenRouter API key is required.");
@@ -149,7 +168,31 @@ export async function requestTranscription(params: RequestTranscriptionParams): 
 		throw new Error(`OpenRouter request failed (${response.status}): ${extractErrorMessage(response.text)}`);
 	}
 
-	return extractTranscriptionFromResponse(parseJson(response.text));
+	return extractTranscriptionResultFromResponse(parseJson(response.text));
+}
+
+function parseTranscriptionResult(rawText: string): TranscriptionResult {
+	const jsonText = rawText
+		.trim()
+		.replace(/^```(?:json)?\s*/i, "")
+		.replace(/\s*```$/i, "");
+
+	try {
+		const parsed = parseJson(jsonText);
+		if (isRecord(parsed)) {
+			return {
+				title: typeof parsed.title === "string" ? parsed.title.trim() : "",
+				transcription: typeof parsed.transcription === "string" ? parsed.transcription.trim() : "",
+			};
+		}
+	} catch {
+		// Keep compatibility with plain-text provider responses.
+	}
+
+	return {
+		title: "",
+		transcription: rawText,
+	};
 }
 
 function extractTextContent(content: unknown): string {

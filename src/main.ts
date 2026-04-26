@@ -12,6 +12,30 @@ import {sortSupportedAudioFiles} from "./audio-files";
 import {requestTranscription} from "./openrouter";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
+const MAX_RECORDING_BASENAME_LENGTH = 80;
+
+export function formatTranscriptionInsertion(recordingFileName: string, transcription: string): string {
+	return `Recording: [[${recordingFileName}]]. Transcription: "${transcription}"`;
+}
+
+export function createRecordingBasename(title: string): string {
+	const firstSentence = title
+		.replace(/\s+/g, " ")
+		.trim()
+		.match(/^[^.!?]+[.!?]?/)?.[0]
+		.trim();
+	const fallback = "Transcribed recording";
+	const safeName = (firstSentence || fallback)
+		.replace(/[\\/:*?"<>|#^[\]]+/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, MAX_RECORDING_BASENAME_LENGTH)
+		.replace(/[.!?,;:\s]+$/g, "")
+		.trim();
+
+	return safeName || fallback;
+}
+
 export default class ObsidianSttPlugin extends Plugin {
 	settings: ObsidianSttPluginSettings;
 	private isTranscribing = false;
@@ -80,7 +104,7 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		try {
 			const audioBuffer = await this.app.vault.readBinary(file);
-			const transcription = await requestTranscription({
+			const transcriptionResult = await requestTranscription({
 				apiKey: this.settings.apiKey,
 				audioBuffer,
 				audioPath: file.path,
@@ -93,7 +117,8 @@ export default class ObsidianSttPlugin extends Plugin {
 				},
 			});
 
-			editor.replaceSelection(transcription);
+			const recordingFileName = await this.renameRecordingFromTranscription(file, transcriptionResult.title);
+			editor.replaceSelection(formatTranscriptionInsertion(recordingFileName, transcriptionResult.transcription));
 			new Notice("Transcription inserted.");
 		} catch (error) {
 			console.error("Audio transcription failed", error);
@@ -101,6 +126,32 @@ export default class ObsidianSttPlugin extends Plugin {
 			new Notice(message);
 		} finally {
 			this.isTranscribing = false;
+		}
+	}
+
+	private async renameRecordingFromTranscription(file: TFile, title: string): Promise<string> {
+		const basename = createRecordingBasename(title);
+		const newPath = this.getAvailableRecordingPath(file, basename);
+
+		if (newPath !== file.path) {
+			await this.app.fileManager.renameFile(file, newPath);
+		}
+
+		return newPath.split("/").pop() || file.name;
+	}
+
+	private getAvailableRecordingPath(file: TFile, basename: string): string {
+		const folderPrefix = file.parent && file.parent.path !== "/" ? `${file.parent.path}/` : "";
+		const extension = file.extension;
+
+		for (let index = 0; ; index += 1) {
+			const suffix = index === 0 ? "" : ` ${index + 1}`;
+			const path = `${folderPrefix}${basename}${suffix}.${extension}`;
+			const existingFile = this.app.vault.getAbstractFileByPath(path);
+
+			if (!existingFile || existingFile === file) {
+				return path;
+			}
 		}
 	}
 }

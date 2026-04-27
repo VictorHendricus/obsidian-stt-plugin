@@ -5,6 +5,7 @@ import {
 	MarkdownView,
 	Notice,
 	Plugin,
+	TFolder,
 	TFile,
 	requestUrl,
 } from "obsidian";
@@ -13,12 +14,17 @@ import {requestTranscription} from "./openrouter";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
 const MAX_RECORDING_BASENAME_LENGTH = 80;
+const REFLECTION_RECORDING_BASENAME = "reflection-learning-reading";
 
-export function formatTranscriptionInsertion(recordingFileName: string, transcription: string): string {
-	return `Recording: [[${recordingFileName}]]. Transcription: "${transcription}"`;
+export function formatDate(date: Date): string {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+
+	return `${year}-${month}-${day}`;
 }
 
-export function createRecordingBasename(title: string): string {
+export function createTranscriptionNoteBasename(title: string): string {
 	const firstSentence = title
 		.replace(/\s+/g, " ")
 		.trim()
@@ -36,6 +42,28 @@ export function createRecordingBasename(title: string): string {
 	return safeName || fallback;
 }
 
+export function createReflectionRecordingBasename(date: Date): string {
+	return `${REFLECTION_RECORDING_BASENAME}-${formatDate(date)}`;
+}
+
+export function formatTranscriptionNoteContent(params: {
+	recordingLink: string;
+	recordedDate: string;
+	transcribedDate: string;
+	transcription: string;
+}): string {
+	return [
+		`Source: ${params.recordingLink}`,
+		`Recorded: ${params.recordedDate}  `,
+		`Transcribed: ${params.transcribedDate}`,
+		"",
+		"---",
+		"## Transcript",
+		params.transcription,
+		"",
+	].join("\n");
+}
+
 export default class ObsidianSttPlugin extends Plugin {
 	settings: ObsidianSttPluginSettings;
 	private isTranscribing = false;
@@ -45,14 +73,14 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		this.addCommand({
 			id: "transcribe-audio-file",
-			name: "Transcribe audio file into editor",
+			name: "Transcribe audio file into note",
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				if (!(view instanceof MarkdownView)) {
 					return false;
 				}
 
 				if (!checking) {
-					this.openAudioPicker(editor);
+					this.openAudioPicker(editor, view.file?.path ?? "");
 				}
 
 				return true;
@@ -74,7 +102,7 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private openAudioPicker(editor: Editor): void {
+	private openAudioPicker(editor: Editor, sourcePath: string): void {
 		const apiKey = this.settings.apiKey.trim();
 		if (!apiKey) {
 			// eslint-disable-next-line obsidianmd/ui/sentence-case
@@ -89,11 +117,11 @@ export default class ObsidianSttPlugin extends Plugin {
 		}
 
 		new AudioFileSuggestModal(this.app, audioFiles, async (file: TFile) => {
-			await this.transcribeIntoEditor(file, editor);
+			await this.transcribeIntoNote(file, editor, sourcePath);
 		}).open();
 	}
 
-	private async transcribeIntoEditor(file: TFile, editor: Editor): Promise<void> {
+	private async transcribeIntoNote(file: TFile, editor: Editor, sourcePath: string): Promise<void> {
 		if (this.isTranscribing) {
 			new Notice("A transcription is already in progress.");
 			return;
@@ -117,9 +145,25 @@ export default class ObsidianSttPlugin extends Plugin {
 				},
 			});
 
-			const recordingFileName = await this.renameRecordingFromTranscription(file, transcriptionResult.title);
-			editor.replaceSelection(formatTranscriptionInsertion(recordingFileName, transcriptionResult.transcription));
-			new Notice("Transcription inserted.");
+			const transcribedDate = formatDate(new Date());
+			const recordedDate = formatDate(new Date(file.stat.ctime));
+			const noteBasename = createTranscriptionNoteBasename(transcriptionResult.title);
+			const noteParent = this.app.fileManager.getNewFileParent("");
+			const notePath = this.getAvailableMarkdownPath(noteParent, noteBasename);
+			await this.renameRecordingToReflectionFile(file, new Date());
+			const recordingLink = this.app.fileManager.generateMarkdownLink(file, notePath);
+			const note = await this.app.vault.create(
+				notePath,
+				formatTranscriptionNoteContent({
+					recordingLink,
+					recordedDate,
+					transcribedDate,
+					transcription: transcriptionResult.transcription,
+				}),
+			);
+			const noteLink = this.app.fileManager.generateMarkdownLink(note, sourcePath);
+			editor.replaceSelection(noteLink);
+			new Notice("Transcription note created.");
 		} catch (error) {
 			console.error("Audio transcription failed", error);
 			const message = error instanceof Error ? error.message : "Unknown transcription error.";
@@ -129,15 +173,13 @@ export default class ObsidianSttPlugin extends Plugin {
 		}
 	}
 
-	private async renameRecordingFromTranscription(file: TFile, title: string): Promise<string> {
-		const basename = createRecordingBasename(title);
+	private async renameRecordingToReflectionFile(file: TFile, date: Date): Promise<void> {
+		const basename = createReflectionRecordingBasename(date);
 		const newPath = this.getAvailableRecordingPath(file, basename);
 
 		if (newPath !== file.path) {
 			await this.app.fileManager.renameFile(file, newPath);
 		}
-
-		return newPath.split("/").pop() || file.name;
 	}
 
 	private getAvailableRecordingPath(file: TFile, basename: string): string {
@@ -150,6 +192,19 @@ export default class ObsidianSttPlugin extends Plugin {
 			const existingFile = this.app.vault.getAbstractFileByPath(path);
 
 			if (!existingFile || existingFile === file) {
+				return path;
+			}
+		}
+	}
+
+	private getAvailableMarkdownPath(parent: TFolder, basename: string): string {
+		const folderPrefix = parent.path === "/" ? "" : `${parent.path}/`;
+
+		for (let index = 0; ; index += 1) {
+			const suffix = index === 0 ? "" : ` ${index + 1}`;
+			const path = `${folderPrefix}${basename}${suffix}.md`;
+
+			if (!this.app.vault.getAbstractFileByPath(path)) {
 				return path;
 			}
 		}

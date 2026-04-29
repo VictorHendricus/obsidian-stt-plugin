@@ -33,7 +33,7 @@ void test(
 
 		assert.match(transcription.transcription, /[A-Za-z]/, "Expected the transcription to contain human-readable text.");
 		assert.ok(transcription.transcription.trim().length >= 20, "Expected a non-trivial transcription.");
-		assert.match(transcription.title, /[A-Za-z]/, "Expected an English recording title.");
+		assert.match(transcription.title, /[A-Za-z]/, "Expected an English transcription summary title.");
 
 		console.log(`Fixture: ${fixtureFileName}`);
 		console.log(`Title: ${transcription.title}`);

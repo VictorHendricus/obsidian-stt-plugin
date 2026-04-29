@@ -14,7 +14,6 @@ import {requestTranscription} from "./openrouter";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
 const MAX_RECORDING_BASENAME_LENGTH = 80;
-const REFLECTION_RECORDING_BASENAME = "reflection-learning-reading";
 
 export function formatDate(date: Date): string {
 	const year = date.getFullYear();
@@ -22,6 +21,17 @@ export function formatDate(date: Date): string {
 	const day = String(date.getDate()).padStart(2, "0");
 
 	return `${year}-${month}-${day}`;
+}
+
+export function formatTimestamp(date: Date): string {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	const hours = String(date.getHours()).padStart(2, "0");
+	const minutes = String(date.getMinutes()).padStart(2, "0");
+	const seconds = String(date.getSeconds()).padStart(2, "0");
+
+	return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
 export function createTranscriptionNoteBasename(title: string): string {
@@ -40,10 +50,6 @@ export function createTranscriptionNoteBasename(title: string): string {
 		.trim();
 
 	return safeName || fallback;
-}
-
-export function createReflectionRecordingBasename(date: Date): string {
-	return `${REFLECTION_RECORDING_BASENAME}-${formatDate(date)}`;
 }
 
 export function formatTranscriptionNoteContent(params: {
@@ -145,12 +151,13 @@ export default class ObsidianSttPlugin extends Plugin {
 				},
 			});
 
-			const transcribedDate = formatDate(new Date());
-			const recordedDate = formatDate(new Date(file.stat.ctime));
+			const transcribedAt = new Date();
+			const transcribedDate = formatTimestamp(transcribedAt);
+			const recordedDate = formatTimestamp(new Date(file.stat.ctime));
 			const noteBasename = createTranscriptionNoteBasename(transcriptionResult.title);
 			const noteParent = this.app.fileManager.getNewFileParent("");
 			const notePath = this.getAvailableMarkdownPath(noteParent, noteBasename);
-			await this.renameRecordingToReflectionFile(file, new Date());
+			await this.renameRecordingAsTranscribed(file, transcribedDate);
 			const recordingLink = this.app.fileManager.generateMarkdownLink(file, notePath);
 			const note = await this.app.vault.create(
 				notePath,
@@ -173,8 +180,8 @@ export default class ObsidianSttPlugin extends Plugin {
 		}
 	}
 
-	private async renameRecordingToReflectionFile(file: TFile, date: Date): Promise<void> {
-		const basename = createReflectionRecordingBasename(date);
+	private async renameRecordingAsTranscribed(file: TFile, transcribedDate: string): Promise<void> {
+		const basename = `${file.basename} -> Transcribed ${transcribedDate}`;
 		const newPath = this.getAvailableRecordingPath(file, basename);
 
 		if (newPath !== file.path) {

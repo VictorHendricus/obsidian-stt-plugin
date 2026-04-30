@@ -1,74 +1,15 @@
-import {
-	App,
-	Editor,
-	FuzzySuggestModal,
-	MarkdownView,
-	Notice,
-	Plugin,
-	TFolder,
-	TFile,
-	requestUrl,
-} from "obsidian";
-import {sortSupportedAudioFiles} from "./audio-files";
+import {Editor, MarkdownView, Notice, Plugin, TFile, requestUrl} from "obsidian";
 import {requestTranscription} from "./openrouter";
+import {RecordingPickerModal} from "./recording-picker-modal";
+import {
+	buildRecordingCandidates,
+	createTranscriptionNoteBasename,
+	findAdjacentWrapper,
+	formatVoiceNoteWrapperContent,
+	getAvailableMarkdownPath,
+	type RecordingCandidate,
+} from "./recording-wrappers";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
-
-const MAX_RECORDING_BASENAME_LENGTH = 80;
-
-export function formatDate(date: Date): string {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-
-	return `${year}-${month}-${day}`;
-}
-
-export function formatTimestamp(date: Date): string {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-	const hours = String(date.getHours()).padStart(2, "0");
-	const minutes = String(date.getMinutes()).padStart(2, "0");
-	const seconds = String(date.getSeconds()).padStart(2, "0");
-
-	return `${year}${month}${day}${hours}${minutes}${seconds}`;
-}
-
-export function createTranscriptionNoteBasename(title: string): string {
-	const firstSentence = title
-		.replace(/\s+/g, " ")
-		.trim()
-		.match(/^[^.!?]+[.!?]?/)?.[0]
-		.trim();
-	const fallback = "Transcribed recording";
-	const safeName = (firstSentence || fallback)
-		.replace(/[\\/:*?"<>|#^[\]]+/g, "")
-		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, MAX_RECORDING_BASENAME_LENGTH)
-		.replace(/[.!?,;:\s]+$/g, "")
-		.trim();
-
-	return safeName || fallback;
-}
-
-export function formatTranscriptionNoteContent(params: {
-	recordingLink: string;
-	recordedDate: string;
-	transcribedDate: string;
-	transcription: string;
-}): string {
-	return [
-		`Source: ${params.recordingLink}`,
-		`Recorded: ${params.recordedDate}  `,
-		`Transcribed: ${params.transcribedDate}`,
-		"",
-		"---",
-		"## Transcript",
-		params.transcription,
-		"",
-	].join("\n");
-}
 
 export default class ObsidianSttPlugin extends Plugin {
 	settings: ObsidianSttPluginSettings;
@@ -78,15 +19,15 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addCommand({
-			id: "transcribe-audio-file",
-			name: "Transcribe audio file into note",
+			id: "transcribe-recording",
+			name: "Transcribe recording",
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				if (!(view instanceof MarkdownView)) {
 					return false;
 				}
 
 				if (!checking) {
-					this.openAudioPicker(editor, view.file?.path ?? "");
+					this.openRecordingPicker(editor, view.file?.path ?? "");
 				}
 
 				return true;
@@ -108,40 +49,60 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private openAudioPicker(editor: Editor, sourcePath: string): void {
+	private openRecordingPicker(editor: Editor, sourcePath: string): void {
+		const candidates = buildRecordingCandidates(this.app);
+		if (candidates.length === 0) {
+			new Notice("No audio recordings were found in this vault.");
+			return;
+		}
+
+		new RecordingPickerModal(this.app, candidates, async (candidate) => {
+			await this.handleRecordingCandidate(candidate, editor, sourcePath);
+		}).open();
+	}
+
+	private async handleRecordingCandidate(candidate: RecordingCandidate, editor: Editor, sourcePath: string): Promise<void> {
+		const existingWrapper = candidate.wrapper ?? findAdjacentWrapper(this.app, candidate.audio);
+		if (existingWrapper) {
+			this.insertWrapperLink(editor, existingWrapper, sourcePath);
+			await this.openWrapper(existingWrapper);
+			return;
+		}
+
+		const wrapper = await this.transcribeRecording(candidate.audio);
+		if (wrapper) {
+			this.insertWrapperLink(editor, wrapper, sourcePath);
+			await this.openWrapper(wrapper);
+		}
+	}
+
+	private async transcribeRecording(audio: TFile): Promise<TFile | null> {
 		const apiKey = this.settings.apiKey.trim();
 		if (!apiKey) {
 			// eslint-disable-next-line obsidianmd/ui/sentence-case
 			new Notice("Add your OpenRouter key in the plugin settings first.");
-			return;
+			return null;
 		}
 
-		const audioFiles = sortSupportedAudioFiles(this.app.vault.getFiles());
-		if (audioFiles.length === 0) {
-			new Notice("No m4a or mp3 files were found in this vault.");
-			return;
-		}
-
-		new AudioFileSuggestModal(this.app, audioFiles, async (file: TFile) => {
-			await this.transcribeIntoNote(file, editor, sourcePath);
-		}).open();
-	}
-
-	private async transcribeIntoNote(file: TFile, editor: Editor, sourcePath: string): Promise<void> {
 		if (this.isTranscribing) {
 			new Notice("A transcription is already in progress.");
-			return;
+			return null;
+		}
+
+		const adjacentWrapper = findAdjacentWrapper(this.app, audio);
+		if (adjacentWrapper) {
+			return adjacentWrapper;
 		}
 
 		this.isTranscribing = true;
-		new Notice(`Transcribing ${file.path}...`);
 
 		try {
-			const audioBuffer = await this.app.vault.readBinary(file);
+			new Notice(`Transcribing ${audio.path}...`);
+			const audioBuffer = await this.app.vault.readBinary(audio);
 			const transcriptionResult = await requestTranscription({
-				apiKey: this.settings.apiKey,
+				apiKey,
 				audioBuffer,
-				audioPath: file.path,
+				audioPath: audio.path,
 				requestUrl: async (request) => {
 					const response = await requestUrl(request);
 					return {
@@ -151,99 +112,42 @@ export default class ObsidianSttPlugin extends Plugin {
 				},
 			});
 
-			const transcribedAt = new Date();
-			const transcribedDate = formatTimestamp(transcribedAt);
-			const recordedDate = formatTimestamp(new Date(file.stat.ctime));
-			const noteBasename = createTranscriptionNoteBasename(transcriptionResult.title);
-			const noteParent = this.app.fileManager.getNewFileParent("");
-			const notePath = this.getAvailableMarkdownPath(noteParent, noteBasename);
-			await this.renameRecordingAsTranscribed(file, transcribedDate);
-			const recordingLink = this.app.fileManager.generateMarkdownLink(file, notePath);
-			const note = await this.app.vault.create(
-				notePath,
-				formatTranscriptionNoteContent({
-					recordingLink,
-					recordedDate,
-					transcribedDate,
-					transcription: transcriptionResult.transcription,
+			const title = createTranscriptionNoteBasename(transcriptionResult.title);
+			const folderPath = this.app.fileManager.getNewFileParent("", `${title}.md`).path;
+			const finalPath = getAvailableMarkdownPath(this.app, folderPath, title);
+			const finalAudioLink = this.app.fileManager.generateMarkdownLink(audio, finalPath);
+			const createdAt = new Date();
+
+			const wrapper = await this.app.vault.create(
+				finalPath,
+				formatVoiceNoteWrapperContent({
+					title,
+					audioLink: finalAudioLink,
+					createdAt,
+					recordedAt: new Date(audio.stat.ctime),
+					transcriptStatus: "transcribed",
+					transcript: transcriptionResult.transcription,
 				}),
 			);
-			const noteLink = this.app.fileManager.generateMarkdownLink(note, sourcePath);
-			editor.replaceSelection(noteLink);
-			new Notice("Transcription note created.");
+
+			new Notice("Transcription wrapper created.");
+			return wrapper;
 		} catch (error) {
-			console.error("Audio transcription failed", error);
+			console.error("Recording transcription failed", error);
 			const message = error instanceof Error ? error.message : "Unknown transcription error.";
 			new Notice(message);
+			return null;
 		} finally {
 			this.isTranscribing = false;
 		}
 	}
 
-	private async renameRecordingAsTranscribed(file: TFile, transcribedDate: string): Promise<void> {
-		const basename = `${file.basename} -> Transcribed ${transcribedDate}`;
-		const newPath = this.getAvailableRecordingPath(file, basename);
-
-		if (newPath !== file.path) {
-			await this.app.fileManager.renameFile(file, newPath);
-		}
+	private insertWrapperLink(editor: Editor, wrapper: TFile, sourcePath: string): void {
+		const wrapperLink = this.app.fileManager.generateMarkdownLink(wrapper, sourcePath);
+		editor.replaceSelection(wrapperLink);
 	}
 
-	private getAvailableRecordingPath(file: TFile, basename: string): string {
-		const folderPrefix = file.parent && file.parent.path !== "/" ? `${file.parent.path}/` : "";
-		const extension = file.extension;
-
-		for (let index = 0; ; index += 1) {
-			const suffix = index === 0 ? "" : ` ${index + 1}`;
-			const path = `${folderPrefix}${basename}${suffix}.${extension}`;
-			const existingFile = this.app.vault.getAbstractFileByPath(path);
-
-			if (!existingFile || existingFile === file) {
-				return path;
-			}
-		}
-	}
-
-	private getAvailableMarkdownPath(parent: TFolder, basename: string): string {
-		const folderPrefix = parent.path === "/" ? "" : `${parent.path}/`;
-
-		for (let index = 0; ; index += 1) {
-			const suffix = index === 0 ? "" : ` ${index + 1}`;
-			const path = `${folderPrefix}${basename}${suffix}.md`;
-
-			if (!this.app.vault.getAbstractFileByPath(path)) {
-				return path;
-			}
-		}
-	}
-}
-
-class AudioFileSuggestModal extends FuzzySuggestModal<TFile> {
-	private readonly files: TFile[];
-	private readonly onChooseFile: (file: TFile) => Promise<void>;
-
-	constructor(app: App, files: TFile[], onChooseFile: (file: TFile) => Promise<void>) {
-		super(app);
-		this.files = files;
-		this.onChooseFile = onChooseFile;
-		this.setPlaceholder("Type an m4a or mp3 path in your vault");
-		this.setInstructions([
-			{command: "Type", purpose: "Filter m4a or mp3 files by path"},
-			{command: "Enter", purpose: "Choose file"},
-			{command: "Esc", purpose: "Cancel"},
-		]);
-		this.emptyStateText = "No matching m4a or mp3 files.";
-	}
-
-	getItems(): TFile[] {
-		return this.files;
-	}
-
-	getItemText(file: TFile): string {
-		return file.path;
-	}
-
-	onChooseItem(file: TFile): void {
-		void this.onChooseFile(file);
+	private async openWrapper(wrapper: TFile): Promise<void> {
+		await this.app.workspace.getLeaf(false).openFile(wrapper);
 	}
 }

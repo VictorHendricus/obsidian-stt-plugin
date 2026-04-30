@@ -10,7 +10,8 @@
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
 		"test": "node --experimental-strip-types --test tests/audio-files.test.ts tests/openrouter.test.ts",
-		"test:integration": "node --env-file=.env.test --experimental-strip-types --test tests/openrouter.integration.test.ts"
+		"test:integration": "node --env-file=.env.test --experimental-strip-types --test tests/openrouter.integration.test.ts",
+		"push": "cp main.js manifest.json styles.css '/home/oleksii/Documents/Bibliotheka/.obsidian/plugins/test-plugin'"
 	},
 	"keywords": [],
 	"license": "0-BSD",

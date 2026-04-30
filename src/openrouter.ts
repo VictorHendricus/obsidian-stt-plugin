@@ -1,12 +1,30 @@
+import {TRANSCRIPTION_PROMPT} from "./ai-prompts.ts";
+
 export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const OPENROUTER_MODEL = "google/gemini-3.1-flash-lite-preview";
-export const TRANSCRIPTION_PROMPT = [
-	"Transcribe this audio and return only valid JSON.",
-	'Use this exact shape: {"title":"one-sentence English summary for the transcription note filename","transcription":"verbatim transcription in the audio language"}.',
-	"The title must summarize the main point of the transcribed text in one concrete sentence, not a vague topic label.",
-	"The title must be in English no matter what language is spoken in the audio.",
-	"Do not wrap the JSON in Markdown.",
-].join(" ");
+export const TRANSCRIPTION_RESPONSE_FORMAT = {
+	type: "json_schema",
+	json_schema: {
+		name: "transcription_result",
+		strict: true,
+		schema: {
+			type: "object",
+			additionalProperties: false,
+			required: ["title", "transcription"],
+			properties: {
+				title: {
+					type: "string",
+					description: "Short English title for the transcription note filename.",
+				},
+				transcription: {
+					type: "string",
+					description: "Verbatim transcription in the audio language.",
+				},
+			},
+		},
+	},
+} as const;
+export {TRANSCRIPTION_PROMPT};
 
 export interface TranscriptionResult {
 	title: string;
@@ -91,6 +109,7 @@ export function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
 export function createTranscriptionRequestBody(audioBase64: string, format: string): {
 	model: string;
 	reasoning: {effort: "minimal"; exclude: true};
+	response_format: typeof TRANSCRIPTION_RESPONSE_FORMAT;
 	stream: false;
 	messages: Array<{
 		role: "user";
@@ -103,6 +122,7 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 			effort: "minimal",
 			exclude: true,
 		},
+		response_format: TRANSCRIPTION_RESPONSE_FORMAT,
 		stream: false,
 		messages: [
 			{
@@ -136,6 +156,14 @@ export function extractTranscriptionResultFromResponse(payload: unknown): Transc
 	const result = parseTranscriptionResult(rawText);
 	if (!result.transcription) {
 		throw new Error("OpenRouter returned an empty transcription.");
+	}
+
+	if (!result.title || looksLikeJsonObject(result.title)) {
+		throw new Error("OpenRouter returned a transcription without a usable English title.");
+	}
+
+	if (looksLikeJsonObject(result.transcription)) {
+		throw new Error("OpenRouter returned JSON as transcript text instead of a parsed transcription.");
 	}
 
 	return result;
@@ -173,27 +201,29 @@ export async function requestTranscription(params: RequestTranscriptionParams): 
 }
 
 function parseTranscriptionResult(rawText: string): TranscriptionResult {
-	const jsonText = rawText
-		.trim()
-		.replace(/^```(?:json)?\s*/i, "")
-		.replace(/\s*```$/i, "");
+	const jsonText = stripMarkdownFence(rawText);
+	const candidates = [jsonText, extractJsonObjectText(jsonText)].filter(
+		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
+	);
 
-	try {
-		const parsed = parseJson(jsonText);
-		if (isRecord(parsed)) {
-			return {
-				title: typeof parsed.title === "string" ? parsed.title.trim() : "",
-				transcription: typeof parsed.transcription === "string" ? parsed.transcription.trim() : "",
-			};
+	for (const candidate of candidates) {
+		const parsed = tryParseJson(candidate);
+		const normalized = normalizeTranscriptionResult(parsed);
+		if (normalized) {
+			return normalized;
 		}
-	} catch {
-		// Keep compatibility with plain-text provider responses.
 	}
 
-	return {
-		title: "",
-		transcription: rawText,
-	};
+	const repaired = repairTranscriptionResult(jsonText);
+	if (repaired) {
+		return repaired;
+	}
+
+	if (looksLikeJsonObject(jsonText)) {
+		throw new Error("OpenRouter returned malformed transcription JSON.");
+	}
+
+	return {title: "", transcription: rawText};
 }
 
 function extractTextContent(content: unknown): string {
@@ -253,6 +283,68 @@ function parseJson(rawText: string): unknown {
 	} catch {
 		throw new Error("OpenRouter returned an invalid JSON response.");
 	}
+}
+
+function tryParseJson(rawText: string): unknown {
+	try {
+		return JSON.parse(rawText) as unknown;
+	} catch {
+		return undefined;
+	}
+}
+
+function normalizeTranscriptionResult(value: unknown): TranscriptionResult | null {
+	if (typeof value === "string") {
+		return normalizeTranscriptionResult(tryParseJson(value));
+	}
+
+	if (!isRecord(value)) {
+		return null;
+	}
+
+	const title = typeof value.title === "string" ? value.title.trim() : "";
+	const transcription = typeof value.transcription === "string" ? value.transcription.trim() : "";
+
+	return transcription ? {title, transcription} : null;
+}
+
+function repairTranscriptionResult(rawText: string): TranscriptionResult | null {
+	const titleMatch = rawText.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/);
+	const transcriptionMatch = rawText.match(/"transcription"\s*:\s*"([\s\S]*)"\s*}\s*$/);
+	const transcription = transcriptionMatch?.[1]?.replace(/\\n/g, "\n").replace(/\\"/g, '"').trim() ?? "";
+
+	if (!transcription) {
+		return null;
+	}
+
+	return {
+		title: titleMatch?.[1]?.replace(/\\"/g, '"').trim() ?? "",
+		transcription,
+	};
+}
+
+function stripMarkdownFence(rawText: string): string {
+	return rawText
+		.trim()
+		.replace(/^```(?:json)?\s*/i, "")
+		.replace(/\s*```$/i, "")
+		.trim();
+}
+
+function extractJsonObjectText(rawText: string): string | null {
+	const start = rawText.indexOf("{");
+	const end = rawText.lastIndexOf("}");
+
+	if (start === -1 || end === -1 || end <= start) {
+		return null;
+	}
+
+	return rawText.slice(start, end + 1);
+}
+
+function looksLikeJsonObject(value: string): boolean {
+	const trimmed = value.trim();
+	return trimmed.startsWith("{") && trimmed.endsWith("}");
 }
 
 function getNestedValue(value: unknown, path: Array<string | number>): unknown {

@@ -3,24 +3,34 @@ export interface FilePathLike {
 	extension?: string;
 }
 
-export const SUPPORTED_AUDIO_EXTENSIONS = ["m4a", "mp3"] as const;
+export const AUDIO_EXTENSIONS = new Set([
+	"m4a",
+	"mp3",
+	"wav",
+	"ogg",
+	"flac",
+	"webm",
+	"3gp",
+]);
 
 export function isSupportedAudioFilePath(path: string): boolean {
-	const normalizedPath = path.trim().toLowerCase();
-	return SUPPORTED_AUDIO_EXTENSIONS.some((extension) => normalizedPath.endsWith(`.${extension}`));
+	const extension = path.trim().toLowerCase().split(".").pop();
+	return typeof extension === "string" && AUDIO_EXTENSIONS.has(extension);
 }
 
-export function isSupportedAudioFile(file: FilePathLike): boolean {
+export function isAudioFile(file: FilePathLike): boolean {
 	if (typeof file.extension === "string" && file.extension.length > 0) {
-		return SUPPORTED_AUDIO_EXTENSIONS.includes(file.extension.toLowerCase() as (typeof SUPPORTED_AUDIO_EXTENSIONS)[number]);
+		return AUDIO_EXTENSIONS.has(file.extension.toLowerCase());
 	}
 
 	return isSupportedAudioFilePath(file.path);
 }
 
+export const isSupportedAudioFile = isAudioFile;
+
 export function sortSupportedAudioFiles<T extends FilePathLike>(files: readonly T[]): T[] {
 	return files
-		.filter((file) => isSupportedAudioFile(file))
+		.filter((file) => isAudioFile(file))
 		.slice()
 		.sort((left, right) => left.path.localeCompare(right.path, undefined, {sensitivity: "base"}));
 }

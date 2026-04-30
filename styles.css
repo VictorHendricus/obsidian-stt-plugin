@@ -6,3 +6,76 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.obsidian-stt-recording-picker {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.obsidian-stt-recording-search {
+	width: 100%;
+}
+
+.obsidian-stt-recording-toggle {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.obsidian-stt-recording-results {
+	max-height: min(60vh, 560px);
+	overflow-y: auto;
+}
+
+.obsidian-stt-recording-group {
+	margin-top: 12px;
+}
+
+.obsidian-stt-recording-group h3 {
+	font-size: var(--font-ui-medium);
+	margin: 0 0 6px;
+}
+
+.obsidian-stt-recording-divider {
+	border-top: 1px solid var(--background-modifier-border);
+	margin-bottom: 6px;
+}
+
+.obsidian-stt-recording-row {
+	background: transparent;
+	border: 0;
+	border-radius: 6px;
+	color: var(--text-normal);
+	cursor: pointer;
+	display: block;
+	height: auto;
+	line-height: var(--line-height-normal);
+	margin: 0;
+	min-height: 0;
+	padding: 8px;
+	text-align: left;
+	white-space: normal;
+	width: 100%;
+}
+
+.obsidian-stt-recording-row:hover,
+.obsidian-stt-recording-row:focus {
+	background: var(--background-modifier-hover);
+}
+
+.obsidian-stt-recording-name {
+	font-weight: var(--font-semibold);
+}
+
+.obsidian-stt-recording-path,
+.obsidian-stt-recording-status,
+.obsidian-stt-recording-wrapper,
+.obsidian-stt-recording-empty {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight);
+	margin-top: 2px;
+	overflow-wrap: anywhere;
+	white-space: normal;
+}

@@ -1,5 +1,6 @@
 import {App, TFile, normalizePath} from "obsidian";
 import {isAudioFile} from "./audio-files";
+export {createTranscriptionNoteBasename} from "./note-titles";
 
 export type TranscriptStatus = "raw" | "transcribed" | "failed" | "processing";
 
@@ -15,9 +16,7 @@ export type WrapperIndex = {
 	byResolvedAudioPath: Map<string, TFile>;
 };
 
-const MAX_RECORDING_BASENAME_LENGTH = 80;
 const VOICE_NOTE_TYPE = "voice-note";
-const DEFAULT_TITLE = "Transcribed recording";
 
 export function buildRecordingCandidates(app: App): RecordingCandidate[] {
 	const index = buildWrapperIndex(app);
@@ -99,23 +98,6 @@ export function getTranscriptStatus(app: App, wrapper: TFile): TranscriptStatus 
 	}
 
 	return "raw";
-}
-
-export function createTranscriptionNoteBasename(title: string): string {
-	const firstSentence = title
-		.replace(/\s+/g, " ")
-		.trim()
-		.match(/^[^.!?]+[.!?]?/)?.[0]
-		.trim();
-	const safeName = (firstSentence || DEFAULT_TITLE)
-		.replace(/[\\/:*?"<>|#^[\]]+/g, "")
-		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, MAX_RECORDING_BASENAME_LENGTH)
-		.replace(/[.!?,;:\s]+$/g, "")
-		.trim();
-
-	return safeName || DEFAULT_TITLE;
 }
 
 export function getAdjacentWrapperPath(audio: TFile): string {

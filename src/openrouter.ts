@@ -1,30 +1,28 @@
-import {TRANSCRIPTION_PROMPT} from "./ai-prompts.ts";
+import {TITLE_PROMPT} from "./ai-prompts.ts";
 
 export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
-export const OPENROUTER_MODEL = "google/gemini-3.1-flash-lite-preview";
-export const TRANSCRIPTION_RESPONSE_FORMAT = {
+export const OPENROUTER_AUDIO_TRANSCRIPTIONS_URL = "https://openrouter.ai/api/v1/audio/transcriptions";
+export const OPENROUTER_TITLE_MODEL = "google/gemini-3.1-flash-lite-preview";
+export const OPENROUTER_TRANSCRIPTION_MODEL = "openai/whisper-large-v3";
+export const TITLE_RESPONSE_FORMAT = {
 	type: "json_schema",
 	json_schema: {
-		name: "transcription_result",
+		name: "transcription_title",
 		strict: true,
 		schema: {
 			type: "object",
 			additionalProperties: false,
-			required: ["title", "transcription"],
+			required: ["title"],
 			properties: {
 				title: {
 					type: "string",
 					description: "Short English title for the transcription note filename.",
 				},
-				transcription: {
-					type: "string",
-					description: "Verbatim transcription in the audio language.",
-				},
 			},
 		},
 	},
 } as const;
-export {TRANSCRIPTION_PROMPT};
+export {TITLE_PROMPT};
 
 export interface TranscriptionResult {
 	title: string;
@@ -34,14 +32,6 @@ export interface TranscriptionResult {
 interface OpenRouterTextContent {
 	type: "text";
 	text: string;
-}
-
-interface OpenRouterInputAudioContent {
-	type: "input_audio";
-	input_audio: {
-		data: string;
-		format: string;
-	};
 }
 
 export interface RequestUrlRequest {
@@ -108,21 +98,37 @@ export function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
 
 export function createTranscriptionRequestBody(audioBase64: string, format: string): {
 	model: string;
+	input_audio: {
+		data: string;
+		format: string;
+	};
+} {
+	return {
+		model: OPENROUTER_TRANSCRIPTION_MODEL,
+		input_audio: {
+			data: audioBase64,
+			format,
+		},
+	};
+}
+
+export function createTitleRequestBody(transcription: string): {
+	model: string;
 	reasoning: {effort: "minimal"; exclude: true};
-	response_format: typeof TRANSCRIPTION_RESPONSE_FORMAT;
+	response_format: typeof TITLE_RESPONSE_FORMAT;
 	stream: false;
 	messages: Array<{
 		role: "user";
-		content: [OpenRouterTextContent, OpenRouterInputAudioContent];
+		content: [OpenRouterTextContent, OpenRouterTextContent];
 	}>;
 } {
 	return {
-		model: OPENROUTER_MODEL,
+		model: OPENROUTER_TITLE_MODEL,
 		reasoning: {
 			effort: "minimal",
 			exclude: true,
 		},
-		response_format: TRANSCRIPTION_RESPONSE_FORMAT,
+		response_format: TITLE_RESPONSE_FORMAT,
 		stream: false,
 		messages: [
 			{
@@ -130,14 +136,11 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 				content: [
 					{
 						type: "text",
-						text: TRANSCRIPTION_PROMPT,
+						text: TITLE_PROMPT,
 					},
 					{
-						type: "input_audio",
-						input_audio: {
-							data: audioBase64,
-							format,
-						},
+						type: "text",
+						text: transcription,
 					},
 				],
 			},
@@ -146,31 +149,34 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 }
 
 export function extractTranscriptionResultFromResponse(payload: unknown): TranscriptionResult {
-	const content = getNestedValue(payload, ["choices", 0, "message", "content"]);
-	const rawText = extractTextContent(content).trim();
-
-	if (!rawText) {
-		throw new Error("OpenRouter returned an empty transcription.");
-	}
+	const rawText = extractTextContent(getNestedValue(payload, ["choices", 0, "message", "content"])).trim();
 
 	const result = parseTranscriptionResult(rawText);
-	if (!result.transcription) {
-		throw new Error("OpenRouter returned an empty transcription.");
-	}
-
-	if (!result.title || looksLikeJsonObject(result.title)) {
-		throw new Error("OpenRouter returned a transcription without a usable English title.");
-	}
-
-	if (looksLikeJsonObject(result.transcription)) {
-		throw new Error("OpenRouter returned JSON as transcript text instead of a parsed transcription.");
-	}
-
 	return result;
 }
 
 export function extractTranscriptionFromResponse(payload: unknown): string {
-	return extractTranscriptionResultFromResponse(payload).transcription;
+	return extractTranscriptTextFromResponse(payload);
+}
+
+export function extractTranscriptTextFromResponse(payload: unknown): string {
+	const text = getTextField(payload).trim();
+	if (!text) {
+		throw new Error("OpenRouter returned an empty transcription.");
+	}
+
+	return text;
+}
+
+export function extractTitleFromResponse(payload: unknown): string {
+	const content = getNestedValue(payload, ["choices", 0, "message", "content"]);
+	const rawText = extractTextContent(content).trim();
+	const title = parseTitleResult(rawText);
+	if (!title || looksLikeJsonObject(title)) {
+		throw new Error("OpenRouter returned a title response without a usable English title.");
+	}
+
+	return title;
 }
 
 export async function requestTranscription(params: RequestTranscriptionParams): Promise<TranscriptionResult> {
@@ -182,7 +188,7 @@ export async function requestTranscription(params: RequestTranscriptionParams): 
 	const audioBase64 = encodeArrayBufferToBase64(params.audioBuffer);
 	const format = getAudioFormat(params.audioPath);
 	const response = await params.requestUrl({
-		url: OPENROUTER_CHAT_COMPLETIONS_URL,
+		url: OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
@@ -194,13 +200,37 @@ export async function requestTranscription(params: RequestTranscriptionParams): 
 	});
 
 	if (response.status < 200 || response.status >= 300) {
-		throw new Error(`OpenRouter request failed (${response.status}): ${extractErrorMessage(response.text)}`);
+		throw new Error(`OpenRouter transcription request failed (${response.status}): ${extractErrorMessage(response.text)}`);
 	}
 
-	return extractTranscriptionResultFromResponse(parseJson(response.text));
+	const transcription = extractTranscriptTextFromResponse(parseJson(response.text));
+	const titleResponse = await params.requestUrl({
+		url: OPENROUTER_CHAT_COMPLETIONS_URL,
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+			"X-OpenRouter-Title": "Obsidian STT Plugin",
+		},
+		body: JSON.stringify(createTitleRequestBody(transcription)),
+		throw: false,
+	});
+
+	if (titleResponse.status < 200 || titleResponse.status >= 300) {
+		throw new Error(`OpenRouter title request failed (${titleResponse.status}): ${extractErrorMessage(titleResponse.text)}`);
+	}
+
+	return {
+		title: extractTitleFromResponse(parseJson(titleResponse.text)),
+		transcription,
+	};
 }
 
 function parseTranscriptionResult(rawText: string): TranscriptionResult {
+	if (!rawText) {
+		throw new Error("OpenRouter returned an empty transcription.");
+	}
+
 	const jsonText = stripMarkdownFence(rawText);
 	const candidates = [jsonText, extractJsonObjectText(jsonText)].filter(
 		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
@@ -224,6 +254,27 @@ function parseTranscriptionResult(rawText: string): TranscriptionResult {
 	}
 
 	return {title: "", transcription: rawText};
+}
+
+function parseTitleResult(rawText: string): string {
+	if (!rawText) {
+		return "";
+	}
+
+	const jsonText = stripMarkdownFence(rawText);
+	const candidates = [jsonText, extractJsonObjectText(jsonText)].filter(
+		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
+	);
+
+	for (const candidate of candidates) {
+		const parsed = tryParseJson(candidate);
+		const title = normalizeTitleResult(parsed);
+		if (title) {
+			return title;
+		}
+	}
+
+	return jsonText.trim();
 }
 
 function extractTextContent(content: unknown): string {
@@ -306,6 +357,34 @@ function normalizeTranscriptionResult(value: unknown): TranscriptionResult | nul
 	const transcription = typeof value.transcription === "string" ? value.transcription.trim() : "";
 
 	return transcription ? {title, transcription} : null;
+}
+
+function normalizeTitleResult(value: unknown): string {
+	if (typeof value === "string") {
+		return normalizeTitleResult(tryParseJson(value)) || value.trim();
+	}
+
+	if (!isRecord(value)) {
+		return "";
+	}
+
+	return typeof value.title === "string" ? value.title.trim() : "";
+}
+
+function getTextField(payload: unknown): string {
+	if (!isRecord(payload)) {
+		return "";
+	}
+
+	if (typeof payload.text === "string") {
+		return payload.text;
+	}
+
+	if (typeof payload.transcription === "string") {
+		return payload.transcription;
+	}
+
+	return "";
 }
 
 function repairTranscriptionResult(rawText: string): TranscriptionResult | null {

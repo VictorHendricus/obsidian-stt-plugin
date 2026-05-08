@@ -1,78 +1,64 @@
 Constraints for sending an audio file for transcription via OpenRouter:
 
 1. Endpoint constraint
-   Must use `POST https://openrouter.ai/api/v1/chat/completions`
-   No separate transcription endpoint is used.
+   Transcription must use `POST https://openrouter.ai/api/v1/audio/transcriptions`.
+   Title generation may use `POST https://openrouter.ai/api/v1/chat/completions`.
 
-2. Encoding constraint
+2. Model constraint
+   Transcription must use `openai/whisper-large-v3`.
+   Chat-completion LLM models must only be used for metadata derived from the transcript, such as the note filename title.
+
+3. Encoding constraint
    Audio must be base64-encoded before sending.
-   Raw binary is not accepted.
+   Raw binary and multipart/form-data are not used.
 
-3. Transport constraint
-   Request body must be JSON.
-   Multipart/form-data is not supported.
+4. Transport constraint
+   Request bodies must be JSON.
 
-4. Message structure constraint
-   Audio must be embedded inside `messages[].content[]` array.
-   Not allowed at top-level fields.
-
-5. Content typing constraint
-   Message content must include:
-
-   * one `type: "text"` block (instruction)
-   * one `type: "input_audio"` block (audio payload)
-
-6. Audio payload schema constraint
-   `input_audio` must contain:
+5. Audio payload schema constraint
+   Transcription requests must include top-level `input_audio` with:
 
    * `data`: base64 string
-   * `format`: explicit format string (`wav`, `mp3`, `ogg`, etc.)
+   * `format`: explicit format string (`wav`, `mp3`, `m4a`, `ogg`, etc.)
 
-7. Model capability constraint
-   Selected model must support audio input modality.
-   Otherwise request fails or ignores audio.
-
-8. URL constraint
+6. URL constraint
    Audio cannot be passed as a remote URL.
    Only inline base64 is accepted.
 
-9. Size constraint
-   Audio must fit within provider request size/token limits.
-   Large files must be preprocessed (trimmed or split).
+7. Size constraint
+   Audio must fit within provider request size limits.
+   Large files must be preprocessed, trimmed, or split.
 
-10. Authentication constraint
-    Must include header:
-    `Authorization: Bearer <API_KEY>`
+8. Authentication constraint
+   Must include header:
+   `Authorization: Bearer <API_KEY>`
 
-11. Content-type constraint
-    Must include header:
-    `Content-Type: application/json`
+9. Content-type constraint
+   Must include header:
+   `Content-Type: application/json`
 
-12. Optional attribution constraint
+10. Optional attribution constraint
     May include:
 
 * `HTTP-Referer`
 * `X-OpenRouter-Title`
   These do not affect execution.
 
-13. Output variability constraint
-    Response format may differ by model/provider:
+11. Output constraint
+    Transcription response must provide transcript text, normally in `text`.
+    Title-generation response must provide a usable English title.
 
-* `message.content` can be string or array
-  Extraction logic must handle both.
-
-14. Execution environment constraint
-    Request must originate from environment capable of sending HTTPS POST with JSON (e.g., Obsidian plugin, Node/Electron).
-
-15. Failure modes constraint
+12. Failure modes constraint
     Errors arise from:
 
 * invalid API key
 * unsupported model
-* malformed message schema
+* malformed request schema
 * exceeding size limits
   Not from CORS in plugin context.
-16. use requestUrl from Obsidian API
+
+13. Obsidian API constraint
+    Use `requestUrl` from the Obsidian API for network calls.
 
 # the mobile-safe design is:
 

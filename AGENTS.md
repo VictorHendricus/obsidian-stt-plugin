@@ -250,3 +250,21 @@ this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
 - Plugin guidelines: https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
 - Style guide: https://help.obsidian.md/style-guide
 - important constraints you must follow @CONSTRAINTS.md(if user request violates constraints, then stop and discuss)
+
+# Quality gates
+
+Before marking work complete:
+
+1. Run tests.
+2. Run coverage.
+3. Run complexity checks.
+4. Run CRAP index checks.
+5. Fix failures instead of bypassing them.
+
+Required command:
+
+```bash
+npm run quality
+```
+
+Do not claim completion unless this command passes.

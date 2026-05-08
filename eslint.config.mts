@@ -22,6 +22,12 @@ export default tseslint.config(
 		},
 	},
 	{
+		files: ["src/**/*.ts", "tests/**/*.ts"],
+		rules: {
+			complexity: ["error", 8],
+		},
+	},
+	{
 		files: ["tests/**/*.ts"],
 		languageOptions: {
 			globals: {

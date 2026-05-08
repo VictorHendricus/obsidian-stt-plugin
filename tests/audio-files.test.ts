@@ -1,7 +1,7 @@
 /* eslint-disable import/no-nodejs-modules */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isSupportedAudioFilePath, sortSupportedAudioFiles} from "../src/audio-files.ts";
+import {isAudioFile, isSupportedAudioFilePath, sortSupportedAudioFiles} from "../src/audio-files.ts";
 
 void test("isSupportedAudioFilePath matches supported audio extensions case-insensitively", () => {
 	assert.equal(isSupportedAudioFilePath("Recordings/clip.m4a"), true);
@@ -24,4 +24,9 @@ void test("sortSupportedAudioFiles keeps only supported audio files and sorts by
 		{path: "voice-note.m4a", extension: "m4a"},
 		{path: "z-last.mp3", extension: "mp3"},
 	]);
+});
+
+void test("isAudioFile falls back to the path extension", () => {
+	assert.equal(isAudioFile({path: "Voice/clip.webm"}), true);
+	assert.equal(isAudioFile({path: "Voice/clip.txt"}), false);
 });

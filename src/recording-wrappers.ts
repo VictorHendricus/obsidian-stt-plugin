@@ -57,28 +57,42 @@ export function buildWrapperIndex(app: App): WrapperIndex {
 		const isVoiceNote = isVoiceNoteFrontmatter(frontmatter);
 
 		if (isVoiceNote) {
-			const audioPath = getFrontmatterString(frontmatter, "audio_path");
-			if (audioPath) {
-				addFirst(byAudioPath, audioPath, file);
-			}
-
-			const sourceLink = getFrontmatterString(frontmatter, "source") || getFrontmatterString(frontmatter, "audio");
-			for (const resolvedPath of resolveMarkdownLinks(app, sourceLink, file.path)) {
-				addFirst(byResolvedAudioPath, resolvedPath, file);
-			}
+			indexVoiceNoteFrontmatterLinks(app, file, frontmatter, byAudioPath, byResolvedAudioPath);
 		}
 
 		if (isVoiceNote || looksLikeLegacyWrapper(cache)) {
-			for (const resolvedPath of Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {})) {
-				const resolvedFile = app.vault.getAbstractFileByPath(resolvedPath);
-				if (resolvedFile instanceof TFile && isAudioFile(resolvedFile)) {
-					addFirst(byResolvedAudioPath, resolvedPath, file);
-				}
-			}
+			indexResolvedAudioLinks(app, file, byResolvedAudioPath);
 		}
 	}
 
 	return {byAudioPath, byResolvedAudioPath};
+}
+
+function indexVoiceNoteFrontmatterLinks(
+	app: App,
+	file: TFile,
+	frontmatter: Record<string, unknown>,
+	byAudioPath: Map<string, TFile>,
+	byResolvedAudioPath: Map<string, TFile>,
+): void {
+	const audioPath = getFrontmatterString(frontmatter, "audio_path");
+	if (audioPath) {
+		addFirst(byAudioPath, audioPath, file);
+	}
+
+	const sourceLink = getFrontmatterString(frontmatter, "source") || getFrontmatterString(frontmatter, "audio");
+	for (const resolvedPath of resolveMarkdownLinks(app, sourceLink, file.path)) {
+		addFirst(byResolvedAudioPath, resolvedPath, file);
+	}
+}
+
+function indexResolvedAudioLinks(app: App, file: TFile, byResolvedAudioPath: Map<string, TFile>): void {
+	for (const resolvedPath of Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {})) {
+		const resolvedFile = app.vault.getAbstractFileByPath(resolvedPath);
+		if (resolvedFile instanceof TFile && isAudioFile(resolvedFile)) {
+			addFirst(byResolvedAudioPath, resolvedPath, file);
+		}
+	}
 }
 
 export function findAdjacentWrapper(app: App, audio: TFile): TFile | null {

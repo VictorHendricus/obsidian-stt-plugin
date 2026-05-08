@@ -6,6 +6,7 @@ import {readFile} from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {
+	OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 	OPENROUTER_CHAT_COMPLETIONS_URL,
 	requestTranscription,
 	type RequestUrlRequest,
@@ -62,5 +63,6 @@ void test("integration fixture exists", async () => {
 	const audioBuffer = await readFile(fixturePath);
 	assert.ok(audioBuffer.byteLength > 0);
 	assert.ok([".m4a", ".mp3"].includes(path.extname(fixturePath).toLowerCase()));
+	assert.equal(OPENROUTER_AUDIO_TRANSCRIPTIONS_URL, "https://openrouter.ai/api/v1/audio/transcriptions");
 	assert.equal(OPENROUTER_CHAT_COMPLETIONS_URL, "https://openrouter.ai/api/v1/chat/completions");
 });

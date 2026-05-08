@@ -18,3 +18,12 @@ void test("createTranscriptionNoteBasename still limits unusually long filenames
 
 	assert.equal(createTranscriptionNoteBasename(title).length <= 180, true);
 });
+
+void test("createTranscriptionNoteBasename falls back when title is unusable", () => {
+	assert.equal(createTranscriptionNoteBasename(""), "Transcribed recording");
+	assert.equal(createTranscriptionNoteBasename("/// ###"), "Transcribed recording");
+});
+
+void test("createTranscriptionNoteBasename removes unsafe filename characters", () => {
+	assert.equal(createTranscriptionNoteBasename("Meeting: plan / risks?"), "Meeting plan risks");
+});

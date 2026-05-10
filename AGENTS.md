@@ -251,15 +251,18 @@ this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
 - Style guide: https://help.obsidian.md/style-guide
 - important constraints you must follow @CONSTRAINTS.md(if user request violates constraints, then stop and discuss)
 
-# Quality gates
+# Quality Gates
 
-Before marking work complete:
+Before marking work complete, run the project quality gate.
 
-1. Run tests.
-2. Run coverage.
-3. Run complexity checks.
-4. Run CRAP index checks.
-5. Fix failures instead of bypassing them.
+Required checks:
+
+1. Lint
+2. Tests
+3. Coverage
+4. Cyclomatic complexity
+5. CRAP index
+6. Duplication detection
 
 Required command:
 
@@ -267,4 +270,19 @@ Required command:
 npm run quality
 ```
 
-Do not claim completion unless this command passes.
+Thresholds:
+
+- Coverage >= 80%
+- Cyclomatic complexity <= 8
+- CRAP index <= 30
+- Duplication <= 3%
+
+Rules:
+
+- Do not claim completion unless the quality command passes.
+- Fix failures instead of bypassing them.
+- Do not lower thresholds to make the gate pass.
+- Do not skip tests to make the gate pass.
+- Do not exclude source files from coverage unless they are generated, vendored, or non-runtime files.
+- Do not suppress complexity, CRAP, or duplication violations without refactoring.
+- If a gate cannot run because tooling is unavailable, report the exact failure.

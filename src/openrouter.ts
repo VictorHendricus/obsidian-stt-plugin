@@ -232,11 +232,8 @@ function parseTranscriptionResult(rawText: string): TranscriptionResult {
 	}
 
 	const jsonText = stripMarkdownFence(rawText);
-	const candidates = [jsonText, extractJsonObjectText(jsonText)].filter(
-		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
-	);
 
-	for (const candidate of candidates) {
+	for (const candidate of parseJsonCandidates(jsonText)) {
 		const parsed = tryParseJson(candidate);
 		const normalized = normalizeTranscriptionResult(parsed);
 		if (normalized) {
@@ -262,11 +259,8 @@ function parseTitleResult(rawText: string): string {
 	}
 
 	const jsonText = stripMarkdownFence(rawText);
-	const candidates = [jsonText, extractJsonObjectText(jsonText)].filter(
-		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
-	);
 
-	for (const candidate of candidates) {
+	for (const candidate of parseJsonCandidates(jsonText)) {
 		const parsed = tryParseJson(candidate);
 		const title = normalizeTitleResult(parsed);
 		if (title) {
@@ -275,6 +269,12 @@ function parseTitleResult(rawText: string): string {
 	}
 
 	return jsonText.trim();
+}
+
+function parseJsonCandidates(jsonText: string): string[] {
+	return [jsonText, extractJsonObjectText(jsonText)].filter(
+		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
+	);
 }
 
 function extractTextContent(content: unknown): string {

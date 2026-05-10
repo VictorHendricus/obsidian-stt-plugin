@@ -1,0 +1,27 @@
+{
+	"path": [
+		"src",
+		"tests"
+	],
+	"minLines": 8,
+	"minTokens": 50,
+	"threshold": 3,
+	"reporters": [
+		"console",
+		"html",
+		"json"
+	],
+	"output": "reports/jscpd",
+	"gitignore": true,
+	"exitCode": 1,
+	"ignore": [
+		"**/node_modules/**",
+		"**/dist/**",
+		"**/build/**",
+		"**/coverage/**",
+		"**/reports/**",
+		"**/.next/**",
+		"**/.nuxt/**",
+		"**/.turbo/**"
+	]
+}

@@ -43,6 +43,8 @@ export default tseslint.config(
 	...obsidianmd.configs.recommended,
 	globalIgnores([
 		"node_modules",
+		"coverage",
+		"reports",
 		"dist",
 		"esbuild.config.mjs",
 		"eslint.config.js",

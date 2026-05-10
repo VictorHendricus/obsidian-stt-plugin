@@ -10,6 +10,13 @@ import {
 	formatRawVoiceNoteWrapperContent,
 } from "../src/recording-wrappers.ts";
 
+const wrapperFixture = {
+	title: "idea",
+	audioLink: "[[Recordings/idea.m4a]]",
+	createdAt: new Date(2026, 4, 8, 9, 10, 11),
+	recordedAt: new Date(2026, 4, 7),
+};
+
 void test("createTranscriptionNoteBasename preserves long generated titles", () => {
 	const title = "Learning to consciously interrupt the flow of thoughts through physical body awareness";
 
@@ -36,12 +43,7 @@ void test("createTranscriptionNoteBasename removes unsafe filename characters", 
 });
 
 void test("formatPendingVoiceNoteWrapperContent creates a durable pending wrapper", () => {
-	const content = formatPendingVoiceNoteWrapperContent({
-		title: "idea",
-		audioLink: "[[Recordings/idea.m4a]]",
-		createdAt: new Date(2026, 4, 8, 9, 10, 11),
-		recordedAt: new Date(2026, 4, 7),
-	});
+	const content = formatPendingVoiceNoteWrapperContent(wrapperFixture);
 
 	assert.match(content, /type: voice-note/);
 	assert.match(content, /status: pending/);
@@ -51,12 +53,7 @@ void test("formatPendingVoiceNoteWrapperContent creates a durable pending wrappe
 });
 
 void test("formatRawVoiceNoteWrapperContent creates a non-transcribed wrapper", () => {
-	const content = formatRawVoiceNoteWrapperContent({
-		title: "idea",
-		audioLink: "[[Recordings/idea.m4a]]",
-		createdAt: new Date(2026, 4, 8, 9, 10, 11),
-		recordedAt: new Date(2026, 4, 7),
-	});
+	const content = formatRawVoiceNoteWrapperContent(wrapperFixture);
 
 	assert.match(content, /type: voice-note/);
 	assert.match(content, /status: raw/);

@@ -153,15 +153,10 @@ export function formatVoiceNoteWrapperContent(params: {
 		"tags:",
 		"  - voice-note",
 		"---",
-		"",
 		`# ${params.title}`,
-		"",
 		"## Audio",
-		"",
 		bodyAudioLink,
-		"",
 		"## Transcript",
-		"",
 		params.transcript.trim(),
 		"",
 	].join("\n");
@@ -225,10 +220,10 @@ export function upsertSection(markdown: string, heading: string, body: string): 
 	const pattern = new RegExp(`(^|\\n)(## ${escaped}\\n)([\\s\\S]*?)(?=\\n## |$)`);
 
 	if (pattern.test(markdown)) {
-		return markdown.replace(pattern, `$1$2\n${body.trim()}\n`);
+		return markdown.replace(pattern, `$1$2${body.trim()}\n`);
 	}
 
-	return `${markdown.trim()}\n\n## ${heading}\n\n${body.trim()}\n`;
+	return `${markdown.trim()}\n## ${heading}\n${body.trim()}\n`;
 }
 
 export function updateFrontmatterField(markdown: string, key: string, value: string): string {

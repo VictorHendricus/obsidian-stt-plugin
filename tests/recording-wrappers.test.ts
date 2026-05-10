@@ -50,6 +50,7 @@ void test("formatPendingVoiceNoteWrapperContent creates a durable pending wrappe
 	assert.match(content, /# idea/);
 	assert.match(content, /!\[\[Recordings\/idea\.m4a\]\]/);
 	assert.match(content, /Pending transcription\./);
+	assert.doesNotMatch(content, /#[^\n]*\n\n/);
 });
 
 void test("formatRawVoiceNoteWrapperContent creates a non-transcribed wrapper", () => {
@@ -60,6 +61,7 @@ void test("formatRawVoiceNoteWrapperContent creates a non-transcribed wrapper", 
 	assert.match(content, /# idea/);
 	assert.match(content, /!\[\[Recordings\/idea\.m4a\]\]/);
 	assert.match(content, /Not transcribed yet\./);
+	assert.doesNotMatch(content, /#[^\n]*\n\n/);
 });
 
 void test("applyTranscriptionToWrapper replaces pending transcript and marks transcribed", () => {
@@ -73,7 +75,8 @@ void test("applyTranscriptionToWrapper replaces pending transcript and marks tra
 	const transcribed = applyTranscriptionToWrapper(pending, "final transcript");
 
 	assert.match(transcribed, /status: transcribed/);
-	assert.match(transcribed, /## Transcript\n\nfinal transcript/);
+	assert.match(transcribed, /## Transcript\nfinal transcript/);
+	assert.doesNotMatch(transcribed, /## Transcript\n\n/);
 	assert.doesNotMatch(transcribed, /Pending transcription\./);
 });
 
@@ -88,7 +91,8 @@ void test("applyFailedTranscriptionToWrapper preserves wrapper and records failu
 	const failed = applyFailedTranscriptionToWrapper(pending, "Network unavailable");
 
 	assert.match(failed, /status: failed/);
-	assert.match(failed, /## Transcript\n\nNetwork unavailable/);
+	assert.match(failed, /## Transcript\nNetwork unavailable/);
+	assert.doesNotMatch(failed, /## Transcript\n\n/);
 });
 
 void test("applyProcessingTranscriptionToWrapper marks interrupted work visibly retryable", () => {
@@ -102,5 +106,6 @@ void test("applyProcessingTranscriptionToWrapper marks interrupted work visibly 
 	const processing = applyProcessingTranscriptionToWrapper(raw);
 
 	assert.match(processing, /status: processing/);
-	assert.match(processing, /## Transcript\n\nTranscription in progress\./);
+	assert.match(processing, /## Transcript\nTranscription in progress\./);
+	assert.doesNotMatch(processing, /## Transcript\n\n/);
 });

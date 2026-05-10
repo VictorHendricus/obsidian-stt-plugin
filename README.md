@@ -26,3 +26,9 @@ Minimal Obsidian plugin for transcribing vault m4a or mp3 files with OpenRouter 
 - `cp .env.test.example .env.test`
 - Add `OPENROUTER_API_KEY` to `.env.test`
 - `npm run test:integration`
+
+## Update plugin command
+
+```bash
+cp manifest.json main.js styles.css '/home/oleksii/Documents/Bibliotheka/.obsidian/plugins/test-plugin'
+```

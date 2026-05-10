@@ -1,13 +1,10 @@
 import {Editor, MarkdownView, Notice, Plugin, TFile, requestUrl} from "obsidian";
-import {requestTranscription} from "./openrouter";
-import {bulkTranscribeRecordings} from "./recording-wrapper-creator";
+import {bulkTranscribeRecordings, transcribeRecordingIntoWrapper} from "./recording-wrapper-creator";
 import {RecordingPickerModal} from "./recording-picker-modal";
 import {
 	buildRecordingCandidates,
-	createTranscriptionNoteBasename,
 	findAdjacentWrapper,
-	formatVoiceNoteWrapperContent,
-	getAvailableMarkdownPath,
+	getTranscriptStatus,
 	type RecordingCandidate,
 } from "./recording-wrappers";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
@@ -21,7 +18,7 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		this.addCommand({
 			id: "transcribe-recording",
-			name: "Transcribe recording",
+			name: "Transcribe recording into note",
 			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
 				if (!(view instanceof MarkdownView)) {
 					return false;
@@ -76,75 +73,34 @@ export default class ObsidianSttPlugin extends Plugin {
 
 	private async handleRecordingCandidate(candidate: RecordingCandidate, editor: Editor, sourcePath: string): Promise<void> {
 		const existingWrapper = candidate.wrapper ?? findAdjacentWrapper(this.app, candidate.audio);
-		if (existingWrapper) {
+		if (existingWrapper && getTranscriptStatus(this.app, existingWrapper) === "transcribed") {
 			this.insertWrapperLink(editor, existingWrapper, sourcePath);
 			await this.openWrapper(existingWrapper);
 			return;
 		}
 
-		const wrapper = await this.transcribeRecording(candidate.audio);
+		const wrapper = await this.transcribeRecording(candidate.audio, existingWrapper);
 		if (wrapper) {
 			this.insertWrapperLink(editor, wrapper, sourcePath);
 			await this.openWrapper(wrapper);
 		}
 	}
 
-	private async transcribeRecording(audio: TFile): Promise<TFile | null> {
-		const apiKey = this.settings.apiKey.trim();
-		if (!apiKey) {
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			new Notice("Add your OpenRouter key in the plugin settings first.");
+	private async transcribeRecording(audio: TFile, existingWrapper?: TFile | null): Promise<TFile | null> {
+		const apiKey = this.getApiKeyOrNotify();
+		const adjacentWrapper = existingWrapper ?? findAdjacentWrapper(this.app, audio);
+		if (!apiKey || !this.canStartTranscription()) {
 			return null;
 		}
 
-		if (this.isTranscribing) {
-			new Notice("A transcription is already in progress.");
-			return null;
-		}
-
-		const adjacentWrapper = findAdjacentWrapper(this.app, audio);
-		if (adjacentWrapper) {
+		if (adjacentWrapper && getTranscriptStatus(this.app, adjacentWrapper) === "transcribed") {
 			return adjacentWrapper;
 		}
 
 		this.isTranscribing = true;
 
 		try {
-			new Notice(`Transcribing ${audio.path}...`);
-			const audioBuffer = await this.app.vault.readBinary(audio);
-			const transcriptionResult = await requestTranscription({
-				apiKey,
-				audioBuffer,
-				audioPath: audio.path,
-				requestUrl: async (request) => {
-					const response = await requestUrl(request);
-					return {
-						status: response.status,
-						text: response.text,
-					};
-				},
-			});
-
-			const title = createTranscriptionNoteBasename(transcriptionResult.title);
-			const folderPath = this.app.fileManager.getNewFileParent("", `${title}.md`).path;
-			const finalPath = getAvailableMarkdownPath(this.app, folderPath, title);
-			const finalAudioLink = this.app.fileManager.generateMarkdownLink(audio, finalPath);
-			const createdAt = new Date();
-
-			const wrapper = await this.app.vault.create(
-				finalPath,
-				formatVoiceNoteWrapperContent({
-					title,
-					audioLink: finalAudioLink,
-					createdAt,
-					recordedAt: new Date(audio.stat.ctime),
-					transcriptStatus: "transcribed",
-					transcript: transcriptionResult.transcription,
-				}),
-			);
-
-			new Notice("Transcription wrapper created.");
-			return wrapper;
+			return await this.createOrRetryTranscriptionWrapper(audio, apiKey, adjacentWrapper);
 		} catch (error) {
 			console.error("Recording transcription failed", error);
 			const message = error instanceof Error ? error.message : "Unknown transcription error.";
@@ -155,9 +111,65 @@ export default class ObsidianSttPlugin extends Plugin {
 		}
 	}
 
+	private getApiKeyOrNotify(): string | null {
+		const apiKey = this.settings.apiKey.trim();
+		if (!apiKey) {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			new Notice("Add your OpenRouter key in the plugin settings first.");
+			return null;
+		}
+
+		return apiKey;
+	}
+
+	private canStartTranscription(): boolean {
+		if (this.isTranscribing) {
+			new Notice("A transcription is already in progress.");
+			return false;
+		}
+
+		return true;
+	}
+
+	private async createOrRetryTranscriptionWrapper(
+		audio: TFile,
+		apiKey: string,
+		existingWrapper: TFile | null,
+	): Promise<TFile> {
+		new Notice(`Transcribing ${audio.path}...`);
+		const result = await transcribeRecordingIntoWrapper({
+			app: this.app,
+			apiKey,
+			audio,
+			existingWrapper,
+			requestUrl: async (request) => {
+				const response = await requestUrl(request);
+				return {
+					status: response.status,
+					text: response.text,
+				};
+			},
+		});
+
+		this.notifyTranscriptionResult(result);
+		return result.wrapper;
+	}
+
+	private notifyTranscriptionResult(result: {created: boolean; transcribed: boolean; error?: unknown}): void {
+		if (!result.transcribed) {
+			const message = result.error instanceof Error ? result.error.message : "Unknown transcription error.";
+			new Notice(message);
+			return;
+		}
+
+		if (result.created) {
+			new Notice("Transcription wrapper created.");
+		}
+	}
+
 	private insertWrapperLink(editor: Editor, wrapper: TFile, sourcePath: string): void {
 		const wrapperLink = this.app.fileManager.generateMarkdownLink(wrapper, sourcePath);
-		editor.replaceSelection(wrapperLink);
+		editor.replaceSelection(embedMarkdownLink(wrapperLink));
 	}
 
 	private async openWrapper(wrapper: TFile): Promise<void> {
@@ -170,6 +182,11 @@ export default class ObsidianSttPlugin extends Plugin {
 			// eslint-disable-next-line obsidianmd/ui/sentence-case
 			new Notice("Add your OpenRouter key in the plugin settings first.");
 			return;
+		}
+
+		const targetCount = countBulkTranscriptionTargets(buildRecordingCandidates(this.app));
+		if (targetCount > 0) {
+			new Notice(`${targetCount} recording${targetCount === 1 ? "" : "s"} need transcription. Starting bulk transcription.`);
 		}
 
 		const result = await bulkTranscribeRecordings({
@@ -186,6 +203,18 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		new Notice(formatBulkTranscriptionNotice(result));
 	}
+}
+
+function embedMarkdownLink(markdownLink: string): string {
+	return markdownLink.startsWith("!") ? markdownLink : `!${markdownLink}`;
+}
+
+function countBulkTranscriptionTargets(candidates: RecordingCandidate[]): number {
+	return candidates.filter(shouldBulkTranscribeCandidate).length;
+}
+
+function shouldBulkTranscribeCandidate(candidate: RecordingCandidate): boolean {
+	return !candidate.wrapper || candidate.transcriptStatus === "raw" || candidate.transcriptStatus === "failed" || candidate.transcriptStatus === "pending" || candidate.transcriptStatus === "processing";
 }
 
 function formatBulkTranscriptionNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {

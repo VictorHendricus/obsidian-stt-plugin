@@ -1,15 +1,15 @@
 import type {App, RequestUrlParam, TFile} from "obsidian";
-import {requestTranscription, type TranscriptionResult} from "./openrouter";
+import {requestTranscription, type TranscriptionResult} from "./openrouter.ts";
 import {
-	applyFailedTranscriptionToWrapper,
-	applyProcessingTranscriptionToWrapper,
-	applyTranscriptionToWrapper,
 	buildRecordingCandidates,
+	createTranscriptionNoteBasename,
+	formatFailedVoiceNoteWrapperContent,
 	formatRawVoiceNoteWrapperContent,
-	getAdjacentWrapperPath,
+	formatVoiceNoteWrapperContent,
+	getAvailableMarkdownPath,
 	getTranscriptStatus,
 	type RecordingCandidate,
-} from "./recording-wrappers";
+} from "./recording-wrappers.ts";
 
 export interface RecordingWrapperCreationResult {
 	created: number;
@@ -21,6 +21,13 @@ export interface BulkTranscriptionResult {
 	transcribed: number;
 	failed: number;
 	skipped: number;
+}
+
+export interface TranscribeRecordingIntoWrapperResult {
+	wrapper: TFile;
+	created: boolean;
+	transcribed: boolean;
+	error?: unknown;
 }
 
 export type RequestUrlAdapter = (request: RequestUrlParam) => Promise<{status: number; text: string}>;
@@ -63,6 +70,31 @@ export async function bulkTranscribeRecordings(params: {
 	return result;
 }
 
+export async function transcribeRecordingIntoWrapper(params: {
+	app: App;
+	apiKey: string;
+	audio: TFile;
+	requestUrl: RequestUrlAdapter;
+	existingWrapper?: TFile | null;
+	now?: () => Date;
+}): Promise<TranscribeRecordingIntoWrapperResult> {
+	const createdAt = params.now?.() ?? new Date();
+	const created = !params.existingWrapper;
+	let wrapper = params.existingWrapper ?? (await createRecordingWrapper(params.app, params.audio, createdAt, "processing"));
+
+	try {
+		wrapper = await rewriteProcessingWrapper(params.app, params.audio, wrapper, createdAt);
+		const transcription = await requestRecordingTranscription(params, params.audio);
+		wrapper = await rewriteSuccessfulWrapper(params.app, params.audio, wrapper, transcription, createdAt);
+
+		return {wrapper, created, transcribed: true};
+	} catch (error) {
+		wrapper = await rewriteFailedWrapper(params.app, params.audio, wrapper, error, createdAt);
+
+		return {wrapper, created, transcribed: false, error};
+	}
+}
+
 async function processCandidate(
 	params: {app: App; apiKey: string; requestUrl: RequestUrlAdapter},
 	candidate: RecordingCandidate,
@@ -85,7 +117,7 @@ async function ensureTranscriptionTarget(
 	result: BulkTranscriptionResult,
 ): Promise<{audio: TFile; wrapper: TFile} | null> {
 	if (!candidate.wrapper) {
-		const wrapper = await createRecordingWrapper(app, candidate.audio, createdAt);
+		const wrapper = await createRecordingWrapper(app, candidate.audio, createdAt, "processing");
 		result.created += 1;
 		return {audio: candidate.audio, wrapper};
 	}
@@ -104,19 +136,14 @@ async function transcribeTarget(
 	result: BulkTranscriptionResult,
 ): Promise<void> {
 	try {
-		await markProcessing(params.app, wrapper);
+		wrapper = await rewriteProcessingWrapper(params.app, audio, wrapper, new Date());
 		const transcription = await requestRecordingTranscription(params, audio);
-		await applySuccessfulTranscription(params.app, wrapper, transcription);
+		await rewriteSuccessfulWrapper(params.app, audio, wrapper, transcription, new Date());
 		result.transcribed += 1;
 	} catch (error) {
-		await applyFailedTranscription(params.app, wrapper, error);
+		await rewriteFailedWrapper(params.app, audio, wrapper, error, new Date());
 		result.failed += 1;
 	}
-}
-
-async function markProcessing(app: App, wrapper: TFile): Promise<void> {
-	const content = await app.vault.read(wrapper);
-	await app.vault.modify(wrapper, applyProcessingTranscriptionToWrapper(content));
 }
 
 async function requestRecordingTranscription(
@@ -133,34 +160,116 @@ async function requestRecordingTranscription(
 	});
 }
 
-async function applySuccessfulTranscription(app: App, wrapper: TFile, transcription: TranscriptionResult): Promise<void> {
-	const content = await app.vault.read(wrapper);
-	await app.vault.modify(wrapper, applyTranscriptionToWrapper(content, transcription.transcription));
-}
-
-async function applyFailedTranscription(app: App, wrapper: TFile, error: unknown): Promise<void> {
-	const content = await app.vault.read(wrapper);
-	const message = error instanceof Error ? error.message : "Unknown transcription error.";
-	await app.vault.modify(wrapper, applyFailedTranscriptionToWrapper(content, message));
-}
-
-async function createRecordingWrapper(app: App, audio: TFile, createdAt: Date): Promise<TFile> {
-	const wrapperPath = getAdjacentWrapperPath(audio);
-	const audioLink = app.fileManager.generateMarkdownLink(audio, wrapperPath);
-
-	return app.vault.create(
-		wrapperPath,
-		formatRawVoiceNoteWrapperContent({
-			title: audio.basename,
-			audioLink,
-			createdAt,
-			recordedAt: new Date(audio.stat.ctime),
+async function rewriteProcessingWrapper(app: App, audio: TFile, wrapper: TFile, createdAt: Date): Promise<TFile> {
+	const title = audio.basename;
+	return rewriteWrapperContent(app, audio, wrapper, title, createdAt, (base) =>
+		formatVoiceNoteWrapperContent({
+			...base,
+			transcriptStatus: "processing",
+			transcript: "Transcription in progress.",
 		}),
 	);
 }
 
+async function rewriteSuccessfulWrapper(
+	app: App,
+	audio: TFile,
+	wrapper: TFile,
+	transcription: TranscriptionResult,
+	createdAt: Date,
+): Promise<TFile> {
+	const title = createTranscriptionNoteBasename(transcription.title);
+	return rewriteWrapperContent(app, audio, wrapper, title, createdAt, (base) =>
+		formatVoiceNoteWrapperContent({
+			...base,
+			transcriptStatus: "transcribed",
+			transcript: transcription.transcription,
+		}),
+	);
+}
+
+async function rewriteFailedWrapper(
+	app: App,
+	audio: TFile,
+	wrapper: TFile,
+	error: unknown,
+	createdAt: Date,
+): Promise<TFile> {
+	const message = error instanceof Error ? error.message : "Unknown transcription error.";
+	const title = audio.basename;
+	return rewriteWrapperContent(app, audio, wrapper, title, createdAt, (base) =>
+		formatFailedVoiceNoteWrapperContent({
+			...base,
+			error: message,
+		}),
+	);
+}
+
+async function rewriteWrapperContent(
+	app: App,
+	audio: TFile,
+	wrapper: TFile,
+	title: string,
+	createdAt: Date,
+	formatContent: (base: {title: string; audioLink: string; createdAt: Date; recordedAt: Date}) => string,
+): Promise<TFile> {
+	const target = await moveWrapperToTitle(app, wrapper, title);
+	const audioLink = app.fileManager.generateMarkdownLink(audio, target.path);
+
+	await app.vault.modify(target, formatContent({title, audioLink, createdAt, recordedAt: new Date(audio.stat.ctime)}));
+
+	return target;
+}
+
+async function createRecordingWrapper(
+	app: App,
+	audio: TFile,
+	createdAt: Date,
+	status: "raw" | "processing" = "raw",
+): Promise<TFile> {
+	const wrapperPath = getRootWrapperPath(app, audio.basename);
+	const audioLink = app.fileManager.generateMarkdownLink(audio, wrapperPath);
+	const content =
+		status === "processing"
+			? formatVoiceNoteWrapperContent({
+					title: audio.basename,
+					audioLink,
+					createdAt,
+					recordedAt: new Date(audio.stat.ctime),
+					transcriptStatus: "processing",
+					transcript: "Transcription in progress.",
+				})
+			: formatRawVoiceNoteWrapperContent({
+					title: audio.basename,
+					audioLink,
+					createdAt,
+					recordedAt: new Date(audio.stat.ctime),
+				});
+
+	return app.vault.create(wrapperPath, content);
+}
+
+async function moveWrapperToTitle(app: App, wrapper: TFile, title: string): Promise<TFile> {
+	const targetPath = getRootWrapperPath(app, title, wrapper);
+	if (wrapper.path !== targetPath) {
+		await app.fileManager.renameFile(wrapper, targetPath);
+	}
+
+	const target = app.vault.getAbstractFileByPath(targetPath);
+	return isFile(target) ? target : wrapper;
+}
+
+function getRootWrapperPath(app: App, title: string, currentFile?: TFile): string {
+	const folderPath = app.fileManager.getNewFileParent("", `${title}.md`).path;
+	return getAvailableMarkdownPath(app, folderPath, title, currentFile);
+}
+
 function isRetryableTranscriptStatus(status: string): boolean {
 	return status === "raw" || status === "failed" || status === "pending" || status === "processing";
+}
+
+function isFile(file: unknown): file is TFile {
+	return typeof file === "object" && file !== null && "path" in file && "extension" in file;
 }
 
 async function runWithConcurrency<T>(

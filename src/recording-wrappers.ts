@@ -26,9 +26,9 @@ export function buildRecordingCandidates(app: App): RecordingCandidate[] {
 		.filter(isAudioFile)
 		.map((audio) => {
 			const wrapper =
-				findAdjacentWrapper(app, audio) ??
 				index.byAudioPath.get(audio.path) ??
 				index.byResolvedAudioPath.get(audio.path) ??
+				findAdjacentWrapper(app, audio) ??
 				null;
 
 			const candidate: RecordingCandidate = {

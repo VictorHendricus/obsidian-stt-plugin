@@ -1,5 +1,6 @@
 import {Editor, MarkdownView, Notice, Plugin, TFile, requestUrl} from "obsidian";
 import {requestTranscription} from "./openrouter";
+import {bulkTranscribeRecordings} from "./recording-wrapper-creator";
 import {RecordingPickerModal} from "./recording-picker-modal";
 import {
 	buildRecordingCandidates,
@@ -32,6 +33,18 @@ export default class ObsidianSttPlugin extends Plugin {
 
 				return true;
 			},
+		});
+
+		this.addCommand({
+			id: "bulk-transcribe-recordings",
+			name: "Bulk transcribe recordings",
+			callback: async () => {
+				await this.bulkTranscribeRecordings();
+			},
+		});
+
+		this.addRibbonIcon("file-audio", "Bulk transcribe recordings", async () => {
+			await this.bulkTranscribeRecordings();
 		});
 
 		this.addSettingTab(new ObsidianSttSettingTab(this.app, this));
@@ -150,4 +163,35 @@ export default class ObsidianSttPlugin extends Plugin {
 	private async openWrapper(wrapper: TFile): Promise<void> {
 		await this.app.workspace.getLeaf(false).openFile(wrapper);
 	}
+
+	private async bulkTranscribeRecordings(): Promise<void> {
+		const apiKey = this.settings.apiKey.trim();
+		if (!apiKey) {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			new Notice("Add your OpenRouter key in the plugin settings first.");
+			return;
+		}
+
+		const result = await bulkTranscribeRecordings({
+			app: this.app,
+			apiKey,
+			requestUrl: async (request) => {
+				const response = await requestUrl(request);
+				return {
+					status: response.status,
+					text: response.text,
+				};
+			},
+		});
+
+		new Notice(formatBulkTranscriptionNotice(result));
+	}
+}
+
+function formatBulkTranscriptionNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {
+	if (result.transcribed === 0 && result.failed === 0 && result.created === 0) {
+		return "No recordings need transcription.";
+	}
+
+	return `Bulk transcription complete: ${result.transcribed} transcribed, ${result.failed} failed, ${result.created} wrapper${result.created === 1 ? "" : "s"} created.`;
 }

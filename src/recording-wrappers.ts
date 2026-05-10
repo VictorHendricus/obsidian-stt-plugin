@@ -1,8 +1,8 @@
-import {App, TFile, normalizePath} from "obsidian";
-import {isAudioFile} from "./audio-files";
-export {createTranscriptionNoteBasename} from "./note-titles";
+import type {App, TFile} from "obsidian";
+import {isAudioFile} from "./audio-files.ts";
+export {createTranscriptionNoteBasename} from "./note-titles.ts";
 
-export type TranscriptStatus = "raw" | "transcribed" | "failed" | "processing";
+export type TranscriptStatus = "raw" | "pending" | "transcribed" | "failed" | "processing";
 
 export type RecordingCandidate = {
 	audio: TFile;
@@ -89,7 +89,7 @@ function indexVoiceNoteFrontmatterLinks(
 function indexResolvedAudioLinks(app: App, file: TFile, byResolvedAudioPath: Map<string, TFile>): void {
 	for (const resolvedPath of Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {})) {
 		const resolvedFile = app.vault.getAbstractFileByPath(resolvedPath);
-		if (resolvedFile instanceof TFile && isAudioFile(resolvedFile)) {
+		if (isFileLike(resolvedFile) && isAudioFile(resolvedFile)) {
 			addFirst(byResolvedAudioPath, resolvedPath, file);
 		}
 	}
@@ -100,14 +100,14 @@ export function findAdjacentWrapper(app: App, audio: TFile): TFile | null {
 	const wrapperPath = `${folderPrefix}${audio.basename}.md`;
 	const wrapper = app.vault.getAbstractFileByPath(wrapperPath);
 
-	return wrapper instanceof TFile && wrapper.extension === "md" ? wrapper : null;
+	return isFileLike(wrapper) && wrapper.extension === "md" ? wrapper : null;
 }
 
 export function getTranscriptStatus(app: App, wrapper: TFile): TranscriptStatus {
 	const frontmatter = app.metadataCache.getFileCache(wrapper)?.frontmatter;
 	const status = getFrontmatterString(frontmatter, "status") || getFrontmatterString(frontmatter, "transcript_status");
 
-	if (status === "raw" || status === "transcribed" || status === "failed" || status === "processing") {
+	if (status === "raw" || status === "pending" || status === "transcribed" || status === "failed" || status === "processing") {
 		return status;
 	}
 
@@ -167,13 +167,65 @@ export function formatVoiceNoteWrapperContent(params: {
 	].join("\n");
 }
 
+export function formatRawVoiceNoteWrapperContent(params: {
+	title: string;
+	audioLink: string;
+	createdAt: Date;
+	recordedAt: Date;
+}): string {
+	return formatVoiceNoteWrapperContent({
+		...params,
+		transcriptStatus: "raw",
+		transcript: "Not transcribed yet.",
+	});
+}
+
+export function formatPendingVoiceNoteWrapperContent(params: {
+	title: string;
+	audioLink: string;
+	createdAt: Date;
+	recordedAt: Date;
+}): string {
+	return formatVoiceNoteWrapperContent({
+		...params,
+		transcriptStatus: "pending",
+		transcript: "Pending transcription.",
+	});
+}
+
+export function formatFailedVoiceNoteWrapperContent(params: {
+	title: string;
+	audioLink: string;
+	createdAt: Date;
+	recordedAt: Date;
+	error: string;
+}): string {
+	return formatVoiceNoteWrapperContent({
+		...params,
+		transcriptStatus: "failed",
+		transcript: params.error,
+	});
+}
+
+export function applyTranscriptionToWrapper(markdown: string, transcript: string): string {
+	return updateFrontmatterField(upsertSection(markdown, "Transcript", transcript), "status", "transcribed");
+}
+
+export function applyFailedTranscriptionToWrapper(markdown: string, error: string): string {
+	return updateFrontmatterField(upsertSection(markdown, "Transcript", error), "status", "failed");
+}
+
+export function applyProcessingTranscriptionToWrapper(markdown: string): string {
+	return updateFrontmatterField(upsertSection(markdown, "Transcript", "Transcription in progress."), "status", "processing");
+}
+
 export function upsertSection(markdown: string, heading: string, body: string): string {
 	const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-	const pattern = new RegExp(`(^## ${escaped}\\n)([\\s\\S]*?)(?=\\n## |$)`, "m");
+	const pattern = new RegExp(`(^|\\n)(## ${escaped}\\n)([\\s\\S]*?)(?=\\n## |$)`);
 
 	if (pattern.test(markdown)) {
-		return markdown.replace(pattern, `$1\n${body.trim()}\n`);
+		return markdown.replace(pattern, `$1$2\n${body.trim()}\n`);
 	}
 
 	return `${markdown.trim()}\n\n## ${heading}\n\n${body.trim()}\n`;
@@ -268,4 +320,12 @@ function formatDateProperty(date: Date): string {
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePath(path: string): string {
+	return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+}
+
+function isFileLike(file: unknown): file is TFile {
+	return typeof file === "object" && file !== null && "path" in file && "extension" in file;
 }

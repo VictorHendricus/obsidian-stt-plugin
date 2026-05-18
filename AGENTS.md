@@ -286,3 +286,19 @@ Rules:
 - Do not exclude source files from coverage unless they are generated, vendored, or non-runtime files.
 - Do not suppress complexity, CRAP, or duplication violations without refactoring.
 - If a gate cannot run because tooling is unavailable, report the exact failure.
+
+## Hyper-quality gate
+
+When asked by the user run:
+
+```bash
+npm run mutation
+```
+
+Threshold:
+
+- Total mutation score >= 75%
+- Covered mutation score >= 75%
+
+Stryker config:
+high: 80, low: 75, break: 75

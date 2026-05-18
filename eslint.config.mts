@@ -44,6 +44,7 @@ export default tseslint.config(
 	globalIgnores([
 		"node_modules",
 		"coverage",
+		".stryker-tmp",
 		"reports",
 		"dist",
 		"esbuild.config.mjs",

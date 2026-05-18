@@ -23,6 +23,14 @@ void test("createTranscriptionNoteBasename preserves long generated titles", () 
 	assert.equal(createTranscriptionNoteBasename(title), title);
 });
 
+void test("createTranscriptionNoteBasename uses the first sentence and trims punctuation", () => {
+	assert.equal(createTranscriptionNoteBasename("First idea. Second idea."), "First idea");
+	assert.equal(createTranscriptionNoteBasename("  First idea?   Second idea."), "First idea");
+	assert.equal(createTranscriptionNoteBasename("First idea,   "), "First idea");
+	assert.equal(createTranscriptionNoteBasename("Intro:   spaced     words!!!"), "Intro spaced words");
+	assert.equal(createTranscriptionNoteBasename("Ignore prefix. Use second?"), "Ignore prefix");
+});
+
 void test("createTranscriptionNoteBasename still limits unusually long filenames", () => {
 	const title = [
 		"Learning to consciously interrupt the flow of thoughts through physical body awareness",

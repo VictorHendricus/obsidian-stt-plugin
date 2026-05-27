@@ -7,6 +7,7 @@ import {
 	getTranscriptStatus,
 	type RecordingCandidate,
 } from "./recording-wrappers";
+import {RadioModeModal} from "./radio-mode-modal.ts";
 import {DEFAULT_SETTINGS, ObsidianSttPluginSettings, ObsidianSttSettingTab} from "./settings";
 
 export default class ObsidianSttPlugin extends Plugin {
@@ -40,6 +41,22 @@ export default class ObsidianSttPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "radio-mode",
+			name: "Radio mode",
+			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+				if (!(view instanceof MarkdownView)) {
+					return false;
+				}
+
+				if (!checking) {
+					this.openRadioMode(editor);
+				}
+
+				return true;
+			},
+		});
+
 		this.addRibbonIcon("file-audio", "Bulk transcribe recordings", async () => {
 			await this.bulkTranscribeRecordings();
 		});
@@ -68,6 +85,21 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		new RecordingPickerModal(this.app, candidates, async (candidate) => {
 			await this.handleRecordingCandidate(candidate, editor, sourcePath);
+		}).open();
+	}
+
+	private openRadioMode(editor: Editor): void {
+		const apiKey = this.getApiKeyOrNotify();
+		if (!apiKey || !this.canStartTranscription()) {
+			return;
+		}
+
+		const cursor = editor.getCursor();
+		this.isTranscribing = true;
+		new RadioModeModal(this.app, this, (transcript) => {
+			editor.replaceRange(transcript, cursor);
+		}, () => {
+			this.isTranscribing = false;
 		}).open();
 	}
 

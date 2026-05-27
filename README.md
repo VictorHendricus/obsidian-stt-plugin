@@ -4,12 +4,20 @@ Minimal Obsidian plugin for transcribing vault m4a or mp3 files with OpenRouter 
 
 ## Behavior
 
-- Uses `openai/whisper-large-v3` through `POST https://openrouter.ai/api/v1/audio/transcriptions` for transcript text
+- Uses `openai/whisper-large-v3-turbo` through `POST https://openrouter.ai/api/v1/audio/transcriptions` for transcript text
 - Sends audio as base64 in the JSON `input_audio` payload
-- Uses `google/gemini-3.1-flash-lite-preview` through `POST https://openrouter.ai/api/v1/chat/completions` only to generate the note filename title
+- Uses `openai/gpt-oss-120b` through `POST https://openrouter.ai/api/v1/chat/completions` with provider fallback order `cerebras/fp16`, `groq`, `deepinfra/turbo`, then `baseten/fp4` to generate the note filename title and transcript summaries
 - Sets title-generation `reasoning.effort` to `minimal`
 - Stores the OpenRouter API key in the plugin settings tab
 - Works on desktop and mobile by using Obsidian APIs only
+- Radio mode records until **Insert** or **Summarize** is selected. **Insert** transcribes and inserts only the transcript; **Summarize** transcribes, requests a summary, and inserts the `summary.md` structure at the cursor.
+
+## Prompts
+
+Editable OpenRouter prompts live in `src/ai-prompts.ts`.
+
+- `TITLE_PROMPT` controls generated wrapper note filenames.
+- `SUMMARY_PROMPT` controls generated transcript summaries.
 
 ## Usage
 

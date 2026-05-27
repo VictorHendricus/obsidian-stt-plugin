@@ -79,3 +79,120 @@ If your plugin does not need CSS, delete this file.
 	overflow-wrap: anywhere;
 	white-space: normal;
 }
+
+.obsidian-stt-radio-modal .modal-close-button {
+	display: none;
+}
+
+.obsidian-stt-radio-modal .modal-content {
+	padding: 0;
+}
+
+.obsidian-stt-radio {
+	align-items: center;
+	display: flex;
+	flex-direction: column;
+	gap: clamp(20px, 5vh, 34px);
+	justify-content: center;
+	min-height: min(70vh, 560px);
+	padding: 42px 28px 36px;
+	position: relative;
+}
+
+.obsidian-stt-radio-close {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	color: var(--text-muted);
+	cursor: pointer;
+	display: flex;
+	height: 44px;
+	justify-content: center;
+	margin: 0;
+	padding: 0;
+	position: absolute;
+	right: 14px;
+	top: 14px;
+	width: 44px;
+}
+
+.obsidian-stt-radio-close:hover,
+.obsidian-stt-radio-close:focus {
+	color: var(--text-normal);
+}
+
+.obsidian-stt-radio-close:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
+.obsidian-stt-radio-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: center;
+	margin: clamp(26px, 7vh, 48px) 0 clamp(12px, 3vh, 22px);
+	width: 100%;
+}
+
+.obsidian-stt-radio-actions button:disabled {
+	cursor: default;
+	opacity: 0.72;
+}
+
+.obsidian-stt-radio-time {
+	color: var(--text-normal);
+	font-size: var(--font-ui-large);
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-semibold);
+	line-height: 1;
+	min-width: 5ch;
+	text-align: center;
+}
+
+.obsidian-stt-radio-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight);
+	min-height: var(--line-height-tight);
+	text-align: center;
+}
+
+.obsidian-stt-radio-visualizer {
+	--radio-level: 0;
+	background:
+		linear-gradient(
+			90deg,
+			transparent 0,
+			transparent calc(50% - (var(--radio-level) * 42%)),
+			var(--interactive-accent) calc(50% - (var(--radio-level) * 42%)),
+			var(--interactive-accent) calc(50% + (var(--radio-level) * 42%)),
+			transparent calc(50% + (var(--radio-level) * 42%)),
+			transparent 100%
+		),
+		linear-gradient(var(--background-modifier-border), var(--background-modifier-border));
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: 100% 3px, 100% 1px;
+	height: 24px;
+	width: min(54vw, 260px);
+}
+
+.obsidian-stt-radio-modal .is-transcribing .obsidian-stt-radio-visualizer {
+	opacity: 0.35;
+}
+
+.obsidian-stt-radio-confirm h2 {
+	font-size: var(--font-ui-large);
+	margin: 0 0 8px;
+}
+
+.obsidian-stt-radio-confirm p {
+	color: var(--text-muted);
+	margin: 0 0 18px;
+}
+
+.obsidian-stt-radio-confirm-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+}

@@ -184,6 +184,7 @@ async function rewriteSuccessfulWrapper(
 			...base,
 			transcriptStatus: "transcribed",
 			transcript: transcription.transcription,
+			summary: transcription.summary,
 		}),
 	);
 }

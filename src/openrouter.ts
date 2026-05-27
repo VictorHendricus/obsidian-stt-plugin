@@ -1,9 +1,10 @@
-import {TITLE_PROMPT} from "./ai-prompts.ts";
+import {SUMMARY_PROMPT, TITLE_PROMPT} from "./ai-prompts.ts";
 
 export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const OPENROUTER_AUDIO_TRANSCRIPTIONS_URL = "https://openrouter.ai/api/v1/audio/transcriptions";
-export const OPENROUTER_TITLE_MODEL = "google/gemini-3.1-flash-lite-preview";
-export const OPENROUTER_TRANSCRIPTION_MODEL = "openai/whisper-large-v3";
+export const OPENROUTER_TITLE_MODEL = "openai/gpt-oss-120b";
+export const OPENROUTER_TITLE_PROVIDER = {order: ["cerebras/fp16", "groq", "deepinfra/turbo", "baseten/fp4"]} as const;
+export const OPENROUTER_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo";
 export const TITLE_RESPONSE_FORMAT = {
 	type: "json_schema",
 	json_schema: {
@@ -22,16 +23,51 @@ export const TITLE_RESPONSE_FORMAT = {
 		},
 	},
 } as const;
-export {TITLE_PROMPT};
+export const SUMMARY_RESPONSE_FORMAT = {
+	type: "json_schema",
+	json_schema: {
+		name: "transcription_summary",
+		strict: true,
+		schema: {
+			type: "object",
+			additionalProperties: false,
+			required: ["summary"],
+			properties: {
+				summary: {
+					type: "array",
+					minItems: 1,
+					items: {
+						type: "string",
+						description: "One concise summary bullet point.",
+					},
+				},
+			},
+		},
+	},
+} as const;
+export {SUMMARY_PROMPT, TITLE_PROMPT};
 
 export interface TranscriptionResult {
 	title: string;
 	transcription: string;
+	summary?: string[];
 }
 
 interface OpenRouterTextContent {
 	type: "text";
 	text: string;
+}
+
+interface OpenRouterChatRequestBody<TResponseFormat> {
+	model: string;
+	provider: typeof OPENROUTER_TITLE_PROVIDER;
+	reasoning: {effort: "minimal"; exclude: true};
+	response_format: TResponseFormat;
+	stream: false;
+	messages: Array<{
+		role: "user";
+		content: [OpenRouterTextContent, OpenRouterTextContent];
+	}>;
 }
 
 export interface RequestUrlRequest {
@@ -51,6 +87,13 @@ export interface RequestTranscriptionParams {
 	apiKey: string;
 	audioBuffer: ArrayBuffer;
 	audioPath: string;
+	requestUrl: (request: RequestUrlRequest) => Promise<RequestUrlResponse>;
+}
+
+export interface RequestTranscriptTextParams {
+	apiKey: string;
+	audioBuffer: ArrayBuffer;
+	audioFormat: string;
 	requestUrl: (request: RequestUrlRequest) => Promise<RequestUrlResponse>;
 }
 
@@ -112,23 +155,27 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 	};
 }
 
-export function createTitleRequestBody(transcription: string): {
-	model: string;
-	reasoning: {effort: "minimal"; exclude: true};
-	response_format: typeof TITLE_RESPONSE_FORMAT;
-	stream: false;
-	messages: Array<{
-		role: "user";
-		content: [OpenRouterTextContent, OpenRouterTextContent];
-	}>;
-} {
+export function createTitleRequestBody(transcription: string): OpenRouterChatRequestBody<typeof TITLE_RESPONSE_FORMAT> {
+	return createChatRequestBody(TITLE_PROMPT, transcription, TITLE_RESPONSE_FORMAT);
+}
+
+export function createSummaryRequestBody(transcription: string): OpenRouterChatRequestBody<typeof SUMMARY_RESPONSE_FORMAT> {
+	return createChatRequestBody(SUMMARY_PROMPT, transcription, SUMMARY_RESPONSE_FORMAT);
+}
+
+function createChatRequestBody<TResponseFormat>(
+	prompt: string,
+	transcription: string,
+	responseFormat: TResponseFormat,
+): OpenRouterChatRequestBody<TResponseFormat> {
 	return {
 		model: OPENROUTER_TITLE_MODEL,
+		provider: OPENROUTER_TITLE_PROVIDER,
 		reasoning: {
 			effort: "minimal",
 			exclude: true,
 		},
-		response_format: TITLE_RESPONSE_FORMAT,
+		response_format: responseFormat,
 		stream: false,
 		messages: [
 			{
@@ -136,7 +183,7 @@ export function createTitleRequestBody(transcription: string): {
 				content: [
 					{
 						type: "text",
-						text: TITLE_PROMPT,
+						text: prompt,
 					},
 					{
 						type: "text",
@@ -179,36 +226,30 @@ export function extractTitleFromResponse(payload: unknown): string {
 	return title;
 }
 
-export async function requestTranscription(params: RequestTranscriptionParams): Promise<TranscriptionResult> {
-	const apiKey = params.apiKey.trim();
-	if (!apiKey) {
-		throw new Error("An OpenRouter API key is required.");
+export function extractSummaryFromResponse(payload: unknown): string[] {
+	const content = getNestedValue(payload, ["choices", 0, "message", "content"]);
+	const rawText = extractTextContent(content).trim();
+	const summary = parseSummaryResult(rawText);
+	if (summary.length === 0) {
+		throw new Error("OpenRouter returned a summary response without usable bullet points.");
 	}
 
-	const audioBase64 = encodeArrayBufferToBase64(params.audioBuffer);
-	const format = getAudioFormat(params.audioPath);
-	const response = await params.requestUrl({
-		url: OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-			"Content-Type": "application/json",
-			"X-OpenRouter-Title": "Obsidian STT Plugin",
-		},
-		body: JSON.stringify(createTranscriptionRequestBody(audioBase64, format)),
-		throw: false,
+	return summary;
+}
+
+export async function requestTranscription(params: RequestTranscriptionParams): Promise<TranscriptionResult> {
+	const transcription = await requestTranscriptText({
+		apiKey: params.apiKey,
+		audioBuffer: params.audioBuffer,
+		audioFormat: getAudioFormat(params.audioPath),
+		requestUrl: params.requestUrl,
 	});
 
-	if (response.status < 200 || response.status >= 300) {
-		throw new Error(`OpenRouter transcription request failed (${response.status}): ${extractErrorMessage(response.text)}`);
-	}
-
-	const transcription = extractTranscriptTextFromResponse(parseJson(response.text));
 	const titleResponse = await params.requestUrl({
 		url: OPENROUTER_CHAT_COMPLETIONS_URL,
 		method: "POST",
 		headers: {
-			Authorization: `Bearer ${apiKey}`,
+			Authorization: `Bearer ${params.apiKey.trim()}`,
 			"Content-Type": "application/json",
 			"X-OpenRouter-Title": "Obsidian STT Plugin",
 		},
@@ -220,10 +261,72 @@ export async function requestTranscription(params: RequestTranscriptionParams): 
 		throw new Error(`OpenRouter title request failed (${titleResponse.status}): ${extractErrorMessage(titleResponse.text)}`);
 	}
 
+	const summary = await requestSummary({
+		apiKey: params.apiKey,
+		transcription,
+		requestUrl: params.requestUrl,
+	});
+
 	return {
 		title: extractTitleFromResponse(parseJson(titleResponse.text)),
 		transcription,
+		summary,
 	};
+}
+
+export async function requestSummary(params: {
+	apiKey: string;
+	transcription: string;
+	requestUrl: (request: RequestUrlRequest) => Promise<RequestUrlResponse>;
+}): Promise<string[]> {
+	const apiKey = params.apiKey.trim();
+	if (!apiKey) {
+		throw new Error("An OpenRouter API key is required.");
+	}
+
+	const response = await params.requestUrl({
+		url: OPENROUTER_CHAT_COMPLETIONS_URL,
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+			"X-OpenRouter-Title": "Obsidian STT Plugin",
+		},
+		body: JSON.stringify(createSummaryRequestBody(params.transcription)),
+		throw: false,
+	});
+
+	if (response.status < 200 || response.status >= 300) {
+		throw new Error(`OpenRouter summary request failed (${response.status}): ${extractErrorMessage(response.text)}`);
+	}
+
+	return extractSummaryFromResponse(parseJson(response.text));
+}
+
+export async function requestTranscriptText(params: RequestTranscriptTextParams): Promise<string> {
+	const apiKey = params.apiKey.trim();
+	if (!apiKey) {
+		throw new Error("An OpenRouter API key is required.");
+	}
+
+	const audioBase64 = encodeArrayBufferToBase64(params.audioBuffer);
+	const response = await params.requestUrl({
+		url: OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+			"X-OpenRouter-Title": "Obsidian STT Plugin",
+		},
+		body: JSON.stringify(createTranscriptionRequestBody(audioBase64, params.audioFormat)),
+		throw: false,
+	});
+
+	if (response.status < 200 || response.status >= 300) {
+		throw new Error(`OpenRouter transcription request failed (${response.status}): ${extractErrorMessage(response.text)}`);
+	}
+
+	return extractTranscriptTextFromResponse(parseJson(response.text));
 }
 
 function parseTranscriptionResult(rawText: string): TranscriptionResult {
@@ -269,6 +372,31 @@ function parseTitleResult(rawText: string): string {
 	}
 
 	return jsonText.trim();
+}
+
+function parseSummaryResult(rawText: string): string[] {
+	if (!rawText) {
+		return [];
+	}
+
+	const jsonText = stripMarkdownFence(rawText);
+
+	for (const candidate of parseJsonCandidates(jsonText)) {
+		const parsed = tryParseJson(candidate);
+		const summary = normalizeSummaryResult(parsed);
+		if (summary.length > 0) {
+			return summary;
+		}
+	}
+
+	if (looksLikeJsonObject(jsonText)) {
+		return [];
+	}
+
+	return jsonText
+		.split("\n")
+		.map((line) => line.replace(/^[-*]\s*/, "").trim())
+		.filter((line) => line.length > 0);
 }
 
 function parseJsonCandidates(jsonText: string): string[] {
@@ -369,6 +497,18 @@ function normalizeTitleResult(value: unknown): string {
 	}
 
 	return typeof value.title === "string" ? value.title.trim() : "";
+}
+
+function normalizeSummaryResult(value: unknown): string[] {
+	if (typeof value === "string") {
+		return normalizeSummaryResult(tryParseJson(value));
+	}
+
+	if (!isRecord(value) || !Array.isArray(value.summary)) {
+		return [];
+	}
+
+	return value.summary.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
 function getTextField(payload: unknown): string {

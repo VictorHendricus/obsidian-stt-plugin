@@ -1,6 +1,6 @@
 {
-	"id": "obsidian-stt-plugin",
-	"name": "Audio Transcription",
+	"id": "smart-transcriber",
+	"name": "Smart Transcriber",
 	"version": "1.1.0",
 	"minAppVersion": "0.15.0",
 	"description": "Transcribe m4a or mp3 files from your vault into the editor with OpenRouter.",

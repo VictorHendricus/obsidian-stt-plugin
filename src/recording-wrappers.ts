@@ -140,8 +140,10 @@ export function formatVoiceNoteWrapperContent(params: {
 	recordedAt: Date;
 	transcriptStatus: TranscriptStatus;
 	transcript: string;
+	summary?: string[];
 }): string {
 	const bodyAudioLink = params.audioLink.startsWith("!") ? params.audioLink : `!${params.audioLink}`;
+	const summary = formatSummarySection(params.summary ?? []);
 
 	return [
 		"---",
@@ -156,6 +158,8 @@ export function formatVoiceNoteWrapperContent(params: {
 		`# ${params.title}`,
 		"## Audio",
 		bodyAudioLink,
+		"## Summary",
+		summary,
 		"## Transcript",
 		params.transcript.trim(),
 		"",
@@ -204,6 +208,10 @@ export function formatFailedVoiceNoteWrapperContent(params: {
 
 export function applyTranscriptionToWrapper(markdown: string, transcript: string): string {
 	return updateFrontmatterField(upsertSection(markdown, "Transcript", transcript), "status", "transcribed");
+}
+
+export function applySummaryToWrapper(markdown: string, summary: string[]): string {
+	return upsertSection(markdown, "Summary", formatSummarySection(summary));
 }
 
 export function applyFailedTranscriptionToWrapper(markdown: string, error: string): string {
@@ -292,6 +300,15 @@ function addFirst(map: Map<string, TFile>, key: string, file: TFile): void {
 
 function quoteYamlString(value: string): string {
 	return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function formatSummarySection(summary: string[]): string {
+	const items = summary.map((item) => item.trim()).filter((item) => item.length > 0);
+	if (items.length === 0) {
+		return "No summary yet.";
+	}
+
+	return items.map((item) => `- ${item}`).join("\n");
 }
 
 function formatDateTimeProperty(date: Date): string {

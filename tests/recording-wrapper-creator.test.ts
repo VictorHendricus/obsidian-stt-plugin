@@ -31,10 +31,12 @@ void test("transcribeRecordingIntoWrapper creates a root wrapper with the genera
 	assert.match(content, /# Generated title/);
 	assert.match(content, /status: transcribed/);
 	assert.match(content, /!\[\[Recordings\/idea\.m4a\]\]/);
+	assert.match(content, /## Summary\n- First point\n- Second point\n## Transcript/);
 	assert.match(content, /Transcript returned by Whisper/);
-	assert.equal(requests.length, 2);
+	assert.equal(requests.length, 3);
 	assert.equal(requests[0]?.url, OPENROUTER_AUDIO_TRANSCRIPTIONS_URL);
 	assert.equal(requests[1]?.url, OPENROUTER_CHAT_COMPLETIONS_URL);
+	assert.equal(requests[2]?.url, OPENROUTER_CHAT_COMPLETIONS_URL);
 });
 
 void test("transcribeRecordingIntoWrapper recreates failed wrappers at the root from a complete template", async () => {
@@ -156,6 +158,15 @@ function createSuccessfulOpenRouterStub(capturedRequests: RequestUrlRequest[]) {
 			return {
 				status: 200,
 				text: JSON.stringify({text: "Transcript returned by Whisper"}),
+			};
+		}
+
+		if (capturedRequests.length === 3) {
+			return {
+				status: 200,
+				text: JSON.stringify({
+					choices: [{message: {content: '{"summary":["First point","Second point"]}'}}],
+				}),
 			};
 		}
 

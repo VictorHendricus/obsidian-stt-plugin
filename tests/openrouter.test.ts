@@ -2,18 +2,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+	createSummaryRequestBody,
 	createTitleRequestBody,
 	createTranscriptionRequestBody,
 	encodeArrayBufferToBase64,
+	extractSummaryFromResponse,
 	extractTitleFromResponse,
 	extractTranscriptionFromResponse,
 	extractTranscriptionResultFromResponse,
 	getAudioFormat,
 	OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 	OPENROUTER_CHAT_COMPLETIONS_URL,
+	OPENROUTER_TITLE_PROVIDER,
 	OPENROUTER_TITLE_MODEL,
 	OPENROUTER_TRANSCRIPTION_MODEL,
+	requestTranscriptText,
 	requestTranscription,
+	SUMMARY_RESPONSE_FORMAT,
 	TITLE_PROMPT,
 	TITLE_RESPONSE_FORMAT,
 	type RequestTranscriptionParams,
@@ -73,8 +78,9 @@ void test("getAudioFormat extracts a lowercase extension", () => {
 void test("OpenRouter constants match the documented API contract", () => {
 	assert.equal(OPENROUTER_CHAT_COMPLETIONS_URL, "https://openrouter.ai/api/v1/chat/completions");
 	assert.equal(OPENROUTER_AUDIO_TRANSCRIPTIONS_URL, "https://openrouter.ai/api/v1/audio/transcriptions");
-	assert.equal(OPENROUTER_TITLE_MODEL, "google/gemini-3.1-flash-lite-preview");
-	assert.equal(OPENROUTER_TRANSCRIPTION_MODEL, "openai/whisper-large-v3");
+	assert.equal(OPENROUTER_TITLE_MODEL, "openai/gpt-oss-120b");
+	assert.deepEqual(OPENROUTER_TITLE_PROVIDER, {order: ["cerebras/fp16", "groq", "deepinfra/turbo", "baseten/fp4"]});
+	assert.equal(OPENROUTER_TRANSCRIPTION_MODEL, "openai/whisper-large-v3-turbo");
 });
 
 void test("createTranscriptionRequestBody matches the OpenRouter audio transcription format", () => {
@@ -91,6 +97,7 @@ void test("createTitleRequestBody matches the OpenRouter chat format", () => {
 	const body = createTitleRequestBody("hello world");
 
 	assert.equal(body.model, OPENROUTER_TITLE_MODEL);
+	assert.deepEqual(body.provider, OPENROUTER_TITLE_PROVIDER);
 	assert.equal(body.stream, false);
 	assert.equal(body.messages[0]?.role, "user");
 	assert.deepEqual(body.reasoning, {
@@ -110,6 +117,17 @@ void test("createTitleRequestBody preserves transcript whitespace for the model"
 
 	assert.equal(body.messages[0]?.content[1].type, "text");
 	assert.equal(body.messages[0]?.content[1].text, "  first line\nsecond line  ");
+});
+
+void test("createSummaryRequestBody matches the OpenRouter chat format", () => {
+	const body = createSummaryRequestBody("hello world");
+
+	assert.equal(body.model, OPENROUTER_TITLE_MODEL);
+	assert.deepEqual(body.provider, OPENROUTER_TITLE_PROVIDER);
+	assert.equal(body.stream, false);
+	assert.deepEqual(body.response_format, SUMMARY_RESPONSE_FORMAT);
+	assert.equal(body.messages[0]?.content[1].type, "text");
+	assert.equal(body.messages[0]?.content[1].text, "hello world");
 });
 
 void test("extractTranscriptionFromResponse supports audio transcription text", () => {
@@ -354,6 +372,28 @@ void test("extractTitleFromResponse parses JSON and rejects empty titles", () =>
 	);
 });
 
+void test("extractSummaryFromResponse parses JSON and plain bullet responses", () => {
+	assert.deepEqual(
+		extractSummaryFromResponse({
+			choices: [{message: {content: '{"summary":["First point","Second point"]}'}}],
+		}),
+		["First point", "Second point"],
+	);
+	assert.deepEqual(
+		extractSummaryFromResponse({
+			choices: [{message: {content: "- First point\n- Second point"}}],
+		}),
+		["First point", "Second point"],
+	);
+	assert.throws(
+		() =>
+			extractSummaryFromResponse({
+				choices: [{message: {content: '{"summary":[]}'}}],
+			}),
+		/without usable bullet points/,
+	);
+});
+
 void test("requestTranscription sends the expected OpenRouter request and returns text", async () => {
 	const capturedRequests: RequestUrlRequest[] = [];
 
@@ -367,9 +407,38 @@ void test("requestTranscription sends the expected OpenRouter request and return
 	assert.deepEqual(transcription, {
 		title: "Greeting",
 		transcription: "hello world",
+		summary: ["First point", "Second point"],
 	});
 	assertSuccessfulTranscriptionRequest(capturedRequests);
 	assertSuccessfulTitleRequest(capturedRequests);
+	assertSuccessfulSummaryRequest(capturedRequests);
+});
+
+void test("requestTranscriptText sends only the audio transcription request", async () => {
+	const capturedRequests: RequestUrlRequest[] = [];
+	const transcript = await requestTranscriptText({
+		apiKey: "test-key",
+		audioBuffer: Uint8Array.from([1, 2, 3]).buffer,
+		audioFormat: "webm",
+		requestUrl: async (request) => {
+			capturedRequests.push(request);
+			return {
+				status: 200,
+				text: JSON.stringify({text: "radio transcript"}),
+			};
+		},
+	});
+
+	assert.equal(transcript, "radio transcript");
+	assert.equal(capturedRequests.length, 1);
+	assert.equal(capturedRequests[0]?.url, OPENROUTER_AUDIO_TRANSCRIPTIONS_URL);
+	assert.deepEqual(JSON.parse(capturedRequests[0]?.body ?? "{}"), {
+		model: OPENROUTER_TRANSCRIPTION_MODEL,
+		input_audio: {
+			data: "AQID",
+			format: "webm",
+		},
+	});
 });
 
 void test("requestTranscription rejects blank API keys before reading requests", async () => {
@@ -448,7 +517,7 @@ void test("requestTranscription treats status 300 as a title failure", async () 
 });
 
 function assertSuccessfulTranscriptionRequest(capturedRequests: RequestUrlRequest[]): void {
-	assert.equal(capturedRequests.length, 2);
+	assert.equal(capturedRequests.length, 3);
 	const request = capturedRequests[0];
 	assert.ok(request);
 	assertRequestMetadata(request, OPENROUTER_AUDIO_TRANSCRIPTIONS_URL);
@@ -468,14 +537,34 @@ function assertSuccessfulTitleRequest(capturedRequests: RequestUrlRequest[]): vo
 	assertRequestMetadata(request, OPENROUTER_CHAT_COMPLETIONS_URL);
 	const parsedTitleBody = JSON.parse(request.body) as {
 		model: string;
+		provider: unknown;
 		response_format: unknown;
 		messages: Array<{content: Array<{type: string; text?: string}>;}>;
 	};
 
 	assert.equal(parsedTitleBody.model, OPENROUTER_TITLE_MODEL);
+	assert.deepEqual(parsedTitleBody.provider, OPENROUTER_TITLE_PROVIDER);
 	assert.deepEqual(parsedTitleBody.response_format, TITLE_RESPONSE_FORMAT);
 	assert.equal(parsedTitleBody.messages[0]?.content[1]?.type, "text");
 	assert.equal(parsedTitleBody.messages[0]?.content[1]?.text, "hello world");
+}
+
+function assertSuccessfulSummaryRequest(capturedRequests: RequestUrlRequest[]): void {
+	const request = capturedRequests[2];
+	assert.ok(request);
+	assertRequestMetadata(request, OPENROUTER_CHAT_COMPLETIONS_URL);
+	const parsedSummaryBody = JSON.parse(request.body) as {
+		model: string;
+		provider: unknown;
+		response_format: unknown;
+		messages: Array<{content: Array<{type: string; text?: string}>;}>;
+	};
+
+	assert.equal(parsedSummaryBody.model, OPENROUTER_TITLE_MODEL);
+	assert.deepEqual(parsedSummaryBody.provider, OPENROUTER_TITLE_PROVIDER);
+	assert.deepEqual(parsedSummaryBody.response_format, SUMMARY_RESPONSE_FORMAT);
+	assert.equal(parsedSummaryBody.messages[0]?.content[1]?.type, "text");
+	assert.equal(parsedSummaryBody.messages[0]?.content[1]?.text, "hello world");
 }
 
 function assertRequestMetadata(request: RequestUrlRequest, url: string): void {
@@ -494,6 +583,22 @@ function createSuccessfulOpenRouterStub(capturedRequests: RequestUrlRequest[]) {
 			return {
 				status: 200,
 				text: JSON.stringify({text: "hello world"}),
+			};
+		}
+
+		const requestBody = JSON.parse(request.body) as {response_format?: unknown};
+		if (JSON.stringify(requestBody.response_format) === JSON.stringify(SUMMARY_RESPONSE_FORMAT)) {
+			return {
+				status: 200,
+				text: JSON.stringify({
+					choices: [
+						{
+							message: {
+								content: '{"summary":["First point","Second point"]}',
+							},
+						},
+					],
+				}),
 			};
 		}
 

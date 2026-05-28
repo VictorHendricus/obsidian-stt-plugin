@@ -25,7 +25,10 @@ export interface PluginTestingApi {
 	};
 	plugin: {
 		createMissingRecordingWrappers(entryPoint?: "ribbon button" | "command palette button"): Promise<void>;
-		bulkTranscribeRecordings(entryPoint?: "ribbon button" | "command palette button"): Promise<void>;
+		fileTranscribe(entryPoint?: "ribbon button" | "command palette button"): Promise<{
+			transcribeAll(): Promise<void>;
+			chooseRecording(path: string): Promise<void>;
+		}>;
 	};
 	transcription: {
 		expectNoRequest(): void;
@@ -48,6 +51,7 @@ export interface PluginTestingApi {
 	};
 	workspace: {
 		expectNoOpenedFile(): void;
+		expectOpenedWrapper(path: string): void;
 	};
 	notifications: {
 		expectEmitted(): void;
@@ -100,8 +104,15 @@ function createPluginApi(state: TestingState): PluginTestingApi["plugin"] {
 		async createMissingRecordingWrappers() {
 			createMissingWrappers(state);
 		},
-		async bulkTranscribeRecordings() {
-			bulkTranscribe(state);
+		async fileTranscribe() {
+			return {
+				async transcribeAll() {
+					bulkTranscribe(state);
+				},
+				async chooseRecording(path: string) {
+					transcribeSingle(state, path);
+				},
+			};
 		},
 	};
 }
@@ -195,6 +206,12 @@ function createWorkspaceApi(state: TestingState): PluginTestingApi["workspace"] 
 		expectNoOpenedFile() {
 			expect(state.openedFiles.length === 0, "Expected no transcription note to be opened.");
 		},
+		expectOpenedWrapper(path) {
+			expect(
+				state.openedFiles.includes(path),
+				`Expected the transcription note for ${path} to be opened.`,
+			);
+		},
 	};
 }
 
@@ -227,21 +244,35 @@ function bulkTranscribe(state: TestingState): void {
 			continue;
 		}
 
-		if (!audio.wrapperCreated) {
-			audio.wrapperCreated = true;
-			state.wrappersCreatedByAction.push(audio.path);
-		}
-
-		audio.status = "transcribed";
-		audio.title = generatedTitleFor(audio.path);
-		audio.transcript = transcriptFor(audio.path);
-		state.transcriptionRequests.push(audio.path);
+		markAudioTranscribed(state, audio);
 		transcribed += 1;
 	}
 
 	if (transcribed === 0) {
 		state.notifications.push("No recordings need transcription.");
 	}
+}
+
+function transcribeSingle(state: TestingState, path: string): void {
+	const audio = findTargetAudio(state, path);
+
+	if (audio.status !== "transcribed") {
+		markAudioTranscribed(state, audio);
+	}
+
+	state.openedFiles.push(audio.path);
+}
+
+function markAudioTranscribed(state: TestingState, audio: AudioRecord): void {
+	if (!audio.wrapperCreated) {
+		audio.wrapperCreated = true;
+		state.wrappersCreatedByAction.push(audio.path);
+	}
+
+	audio.status = "transcribed";
+	audio.title = generatedTitleFor(audio.path);
+	audio.transcript = transcriptFor(audio.path);
+	state.transcriptionRequests.push(audio.path);
 }
 
 function addAudio(state: TestingState, audio: AudioRecord): void {

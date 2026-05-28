@@ -18,26 +18,11 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addCommand({
-			id: "transcribe-recording",
-			name: "Transcribe recording into note",
-			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
-				if (!(view instanceof MarkdownView)) {
-					return false;
-				}
-
-				if (!checking) {
-					this.openRecordingPicker(editor, view.file?.path ?? "");
-				}
-
-				return true;
-			},
-		});
-
-		this.addCommand({
-			id: "bulk-transcribe-recordings",
-			name: "Bulk transcribe recordings",
+			id: "file-transcribe",
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			name: "File Transcribe",
 			callback: async () => {
-				await this.bulkTranscribeRecordings();
+				this.openRecordingPicker();
 			},
 		});
 
@@ -57,8 +42,9 @@ export default class ObsidianSttPlugin extends Plugin {
 			},
 		});
 
-		this.addRibbonIcon("file-audio", "Bulk transcribe recordings", async () => {
-			await this.bulkTranscribeRecordings();
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		this.addRibbonIcon("file-audio", "File Transcribe", () => {
+			this.openRecordingPicker();
 		});
 
 		this.addSettingTab(new ObsidianSttSettingTab(this.app, this));
@@ -76,15 +62,23 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private openRecordingPicker(editor: Editor, sourcePath: string): void {
+	private openRecordingPicker(): void {
 		const candidates = buildRecordingCandidates(this.app);
 		if (candidates.length === 0) {
 			new Notice("No audio recordings were found in this vault.");
 			return;
 		}
 
-		new RecordingPickerModal(this.app, candidates, async (candidate) => {
-			await this.handleRecordingCandidate(candidate, editor, sourcePath);
+		new RecordingPickerModal({
+			app: this.app,
+			candidates,
+			isTranscribing: () => this.isTranscribing,
+			onChooseCandidate: async (candidate) => {
+				await this.handleRecordingCandidate(candidate);
+			},
+			onTranscribeAll: async () => {
+				await this.fileTranscribeAll();
+			},
 		}).open();
 	}
 
@@ -103,17 +97,15 @@ export default class ObsidianSttPlugin extends Plugin {
 		}).open();
 	}
 
-	private async handleRecordingCandidate(candidate: RecordingCandidate, editor: Editor, sourcePath: string): Promise<void> {
+	private async handleRecordingCandidate(candidate: RecordingCandidate): Promise<void> {
 		const existingWrapper = candidate.wrapper ?? findAdjacentWrapper(this.app, candidate.audio);
 		if (existingWrapper && getTranscriptStatus(this.app, existingWrapper) === "transcribed") {
-			this.insertWrapperLink(editor, existingWrapper, sourcePath);
 			await this.openWrapper(existingWrapper);
 			return;
 		}
 
 		const wrapper = await this.transcribeRecording(candidate.audio, existingWrapper);
 		if (wrapper) {
-			this.insertWrapperLink(editor, wrapper, sourcePath);
 			await this.openWrapper(wrapper);
 		}
 	}
@@ -199,16 +191,11 @@ export default class ObsidianSttPlugin extends Plugin {
 		}
 	}
 
-	private insertWrapperLink(editor: Editor, wrapper: TFile, sourcePath: string): void {
-		const wrapperLink = this.app.fileManager.generateMarkdownLink(wrapper, sourcePath);
-		editor.replaceSelection(embedMarkdownLink(wrapperLink));
-	}
-
 	private async openWrapper(wrapper: TFile): Promise<void> {
 		await this.app.workspace.getLeaf(false).openFile(wrapper);
 	}
 
-	private async bulkTranscribeRecordings(): Promise<void> {
+	private async fileTranscribeAll(): Promise<void> {
 		const apiKey = this.settings.apiKey.trim();
 		if (!apiKey) {
 			// eslint-disable-next-line obsidianmd/ui/sentence-case
@@ -216,29 +203,35 @@ export default class ObsidianSttPlugin extends Plugin {
 			return;
 		}
 
-		const targetCount = countBulkTranscriptionTargets(buildRecordingCandidates(this.app));
-		if (targetCount > 0) {
-			new Notice(`${targetCount} recording${targetCount === 1 ? "" : "s"} need transcription. Starting bulk transcription.`);
+		if (!this.canStartTranscription()) {
+			return;
 		}
 
-		const result = await bulkTranscribeRecordings({
-			app: this.app,
-			apiKey,
-			requestUrl: async (request) => {
-				const response = await requestUrl(request);
-				return {
-					status: response.status,
-					text: response.text,
-				};
-			},
-		});
+		const targetCount = countBulkTranscriptionTargets(buildRecordingCandidates(this.app));
+		if (targetCount > 0) {
+			new Notice(`${targetCount} recording${targetCount === 1 ? "" : "s"} need transcription. Starting File Transcribe.`);
+		}
 
-		new Notice(formatBulkTranscriptionNotice(result));
+		this.isTranscribing = true;
+
+		try {
+			const result = await bulkTranscribeRecordings({
+				app: this.app,
+				apiKey,
+				requestUrl: async (request) => {
+					const response = await requestUrl(request);
+					return {
+						status: response.status,
+						text: response.text,
+					};
+				},
+			});
+
+			new Notice(formatFileTranscribeNotice(result));
+		} finally {
+			this.isTranscribing = false;
+		}
 	}
-}
-
-function embedMarkdownLink(markdownLink: string): string {
-	return markdownLink.startsWith("!") ? markdownLink : `!${markdownLink}`;
 }
 
 function countBulkTranscriptionTargets(candidates: RecordingCandidate[]): number {
@@ -249,10 +242,10 @@ function shouldBulkTranscribeCandidate(candidate: RecordingCandidate): boolean {
 	return !candidate.wrapper || candidate.transcriptStatus === "raw" || candidate.transcriptStatus === "failed" || candidate.transcriptStatus === "pending" || candidate.transcriptStatus === "processing";
 }
 
-function formatBulkTranscriptionNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {
+function formatFileTranscribeNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {
 	if (result.transcribed === 0 && result.failed === 0 && result.created === 0) {
 		return "No recordings need transcription.";
 	}
 
-	return `Bulk transcription complete: ${result.transcribed} transcribed, ${result.failed} failed, ${result.created} wrapper${result.created === 1 ? "" : "s"} created.`;
+	return `File Transcribe complete: ${result.transcribed} transcribed, ${result.failed} failed, ${result.created} wrapper${result.created === 1 ? "" : "s"} created.`;
 }

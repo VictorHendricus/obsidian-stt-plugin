@@ -36,12 +36,13 @@ void test("testing API skips recordings that already have wrappers", async () =>
 	api.wrapper.expectCreatedCount(0);
 });
 
-void test("testing API models bulk transcription from the ribbon action", async () => {
+void test("testing API models File Transcribe all from the ribbon action", async () => {
 	const api = createPluginTestingApi();
 
 	api.vault.addUnwrappedAudio("Recordings/idea.m4a");
 
-	await api.plugin.bulkTranscribeRecordings();
+	const modal = await api.plugin.fileTranscribe();
+	await modal.transcribeAll();
 
 	api.wrapper.expectCreated();
 	api.wrapper.expectCreatedCount(1);
@@ -56,7 +57,8 @@ void test("testing API skips recordings that are already transcribed", async () 
 
 	api.vault.addTranscribedAudio("Recordings/idea.m4a");
 
-	await api.plugin.bulkTranscribeRecordings();
+	const modal = await api.plugin.fileTranscribe();
+	await modal.transcribeAll();
 
 	api.wrapper.expectCreatedCount(0);
 	api.transcription.expectNoRequest();

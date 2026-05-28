@@ -30,11 +30,12 @@ Feature files live in `features/`.
 They describe intended behavior in Gherkin syntax, for example:
 
 ```gherkin
-Feature: Bulk recording transcription
+Feature: File Transcribe
 
-  Scenario: User bulk transcribes unwrapped recordings
+  Scenario: User transcribes all unwrapped recordings
     Given the vault contains an unwrapped audio file "Recordings/idea.m4a"
-    When the user selects the bulk transcribe recordings ribbon button
+    When the user opens File Transcribe from the ribbon button
+    And selects Transcribe all
     Then a voice note wrapper file is created
     And the audio file is transcribed
     And the wrapper status is "transcribed"
@@ -53,7 +54,8 @@ const api = createPluginTestingApi();
 
 api.vault.addUnwrappedAudio("Recordings/idea.m4a");
 
-await api.plugin.bulkTranscribeRecordings();
+const modal = await api.plugin.fileTranscribe();
+await modal.transcribeAll();
 
 api.wrapper.expectCreated();
 api.transcription.expectRequestCount(1);
@@ -128,7 +130,8 @@ When a feature needs a new behavior-facing operation, add it to `src/testing/plu
 Good testing API methods describe observable behavior:
 
 ```ts
-api.plugin.bulkTranscribeRecordings();
+const modal = await api.plugin.fileTranscribe();
+await modal.transcribeAll();
 api.wrapper.expectStatus("transcribed");
 api.transcription.expectNoRequest();
 ```

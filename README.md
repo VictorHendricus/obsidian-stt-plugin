@@ -1,6 +1,6 @@
 # Audio Transcription
 
-Minimal Obsidian plugin for transcribing vault m4a or mp3 files with OpenRouter and inserting the result at the current cursor position.
+Minimal Obsidian plugin for transcribing vault m4a or mp3 files with OpenRouter into wrapper notes.
 
 ## Behavior
 
@@ -22,9 +22,9 @@ Editable OpenRouter prompts live in `src/ai-prompts.ts`.
 ## Usage
 
 1. Open the plugin settings and paste your OpenRouter API key.
-2. Run `Transcribe audio file into editor` from the command palette or the editor slash menu.
-3. Type part of an m4a or mp3 path and choose a file from the vault suggestions.
-4. Wait for the transcription to be inserted at the cursor.
+2. Run `File Transcribe` from the command palette or select the ribbon button.
+3. Choose one recording, or select **Transcribe all**.
+4. Wait for transcription wrapper notes to be created or updated.
 
 ## Development
 

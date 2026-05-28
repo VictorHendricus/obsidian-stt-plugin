@@ -1,29 +1,55 @@
 import {App, Modal} from "obsidian";
 import type {RecordingCandidate} from "./recording-wrappers";
 
+interface RecordingPickerModalParams {
+	app: App;
+	candidates: RecordingCandidate[];
+	isTranscribing: () => boolean;
+	onChooseCandidate: (candidate: RecordingCandidate) => Promise<void>;
+	onTranscribeAll: () => Promise<void>;
+}
+
 export class RecordingPickerModal extends Modal {
 	private readonly candidates: RecordingCandidate[];
+	private readonly isTranscribing: () => boolean;
 	private readonly onChooseCandidate: (candidate: RecordingCandidate) => Promise<void>;
+	private readonly onTranscribeAll: () => Promise<void>;
+	private transcribeAllButtonEl: HTMLButtonElement | null = null;
 	private searchInputEl: HTMLInputElement | null = null;
 	private hideWrappedInputEl: HTMLInputElement | null = null;
 	private resultsEl: HTMLElement | null = null;
 	private query = "";
 	private hideWrapped = false;
 
-	constructor(
-		app: App,
-		candidates: RecordingCandidate[],
-		onChooseCandidate: (candidate: RecordingCandidate) => Promise<void>,
-	) {
-		super(app);
-		this.candidates = candidates;
-		this.onChooseCandidate = onChooseCandidate;
+	constructor(params: RecordingPickerModalParams) {
+		super(params.app);
+		this.candidates = params.candidates;
+		this.isTranscribing = params.isTranscribing;
+		this.onChooseCandidate = params.onChooseCandidate;
+		this.onTranscribeAll = params.onTranscribeAll;
 	}
 
 	onOpen(): void {
-		this.setTitle("Transcribe recording");
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		this.setTitle("File Transcribe");
 		this.contentEl.empty();
 		this.contentEl.addClass("obsidian-stt-recording-picker");
+
+		this.transcribeAllButtonEl = this.contentEl.createEl("button", {
+			type: "button",
+			text: "Transcribe all",
+			cls: "mod-cta obsidian-stt-transcribe-all",
+		});
+		this.updateTranscribeAllButton();
+		this.transcribeAllButtonEl.addEventListener("click", () => {
+			if (this.isTranscribing()) {
+				this.updateTranscribeAllButton();
+				return;
+			}
+
+			this.close();
+			void this.onTranscribeAll();
+		});
 
 		this.searchInputEl = this.contentEl.createEl("input", {
 			type: "search",
@@ -52,9 +78,16 @@ export class RecordingPickerModal extends Modal {
 
 	onClose(): void {
 		this.contentEl.empty();
+		this.transcribeAllButtonEl = null;
 		this.searchInputEl = null;
 		this.hideWrappedInputEl = null;
 		this.resultsEl = null;
+	}
+
+	private updateTranscribeAllButton(): void {
+		if (this.transcribeAllButtonEl) {
+			this.transcribeAllButtonEl.disabled = this.isTranscribing();
+		}
 	}
 
 	private renderResults(): void {

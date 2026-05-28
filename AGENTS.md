@@ -302,3 +302,7 @@ Threshold:
 
 Stryker config:
 high: 80, low: 75, break: 75
+
+## Hints
+
+- use nvm for quality gate due to node version mismatch

@@ -4,7 +4,7 @@ Minimal Obsidian plugin for transcribing vault m4a or mp3 files with OpenRouter 
 
 ## Behavior
 
-- Uses `openai/whisper-large-v3-turbo` through `POST https://openrouter.ai/api/v1/audio/transcriptions` for transcript text
+- Uses `nvidia/parakeet-tdt-0.6b-v3` through `POST https://openrouter.ai/api/v1/audio/transcriptions` for transcript text, with `openai/whisper-large-v3-turbo` as a fallback
 - Sends audio as base64 in the JSON `input_audio` payload
 - Uses `openai/gpt-oss-120b` through `POST https://openrouter.ai/api/v1/chat/completions` with provider fallback order `cerebras/fp16`, `groq`, `deepinfra/turbo`, then `baseten/fp4` to generate the note filename title and transcript summaries
 - Sets title-generation `reasoning.effort` to `minimal`

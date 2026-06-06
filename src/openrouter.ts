@@ -4,7 +4,8 @@ export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/cha
 export const OPENROUTER_AUDIO_TRANSCRIPTIONS_URL = "https://openrouter.ai/api/v1/audio/transcriptions";
 export const OPENROUTER_TITLE_MODEL = "openai/gpt-oss-120b";
 export const OPENROUTER_TITLE_PROVIDER = {order: ["cerebras/fp16", "groq", "deepinfra/turbo", "baseten/fp4"]} as const;
-export const OPENROUTER_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo";
+export const OPENROUTER_TRANSCRIPTION_MODEL = "nvidia/parakeet-tdt-0.6b-v3";
+export const OPENROUTER_FALLBACK_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo";
 export const TITLE_RESPONSE_FORMAT = {
 	type: "json_schema",
 	json_schema: {
@@ -145,9 +146,27 @@ export function createTranscriptionRequestBody(audioBase64: string, format: stri
 		data: string;
 		format: string;
 	};
+};
+export function createTranscriptionRequestBody(audioBase64: string, format: string, model: string): {
+	model: string;
+	input_audio: {
+		data: string;
+		format: string;
+	};
+};
+export function createTranscriptionRequestBody(
+	audioBase64: string,
+	format: string,
+	model = OPENROUTER_TRANSCRIPTION_MODEL,
+): {
+	model: string;
+	input_audio: {
+		data: string;
+		format: string;
+	};
 } {
 	return {
-		model: OPENROUTER_TRANSCRIPTION_MODEL,
+		model,
 		input_audio: {
 			data: audioBase64,
 			format,
@@ -310,6 +329,30 @@ export async function requestTranscriptText(params: RequestTranscriptTextParams)
 	}
 
 	const audioBase64 = encodeArrayBufferToBase64(params.audioBuffer);
+	const primaryAttempt = await requestTranscriptTextWithModel(params, apiKey, audioBase64, OPENROUTER_TRANSCRIPTION_MODEL);
+	if (primaryAttempt.ok) {
+		return primaryAttempt.text;
+	}
+
+	const fallbackAttempt = await requestTranscriptTextWithModel(
+		params,
+		apiKey,
+		audioBase64,
+		OPENROUTER_FALLBACK_TRANSCRIPTION_MODEL,
+	);
+	if (fallbackAttempt.ok) {
+		return fallbackAttempt.text;
+	}
+
+	throw primaryAttempt.error;
+}
+
+async function requestTranscriptTextWithModel(
+	params: RequestTranscriptTextParams,
+	apiKey: string,
+	audioBase64: string,
+	model: string,
+): Promise<{ok: true; text: string} | {ok: false; error: Error}> {
 	const response = await params.requestUrl({
 		url: OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 		method: "POST",
@@ -318,15 +361,22 @@ export async function requestTranscriptText(params: RequestTranscriptTextParams)
 			"Content-Type": "application/json",
 			"X-OpenRouter-Title": "Obsidian STT Plugin",
 		},
-		body: JSON.stringify(createTranscriptionRequestBody(audioBase64, params.audioFormat)),
+		body: JSON.stringify(createTranscriptionRequestBody(audioBase64, params.audioFormat, model)),
 		throw: false,
 	});
 
 	if (response.status < 200 || response.status >= 300) {
-		throw new Error(`OpenRouter transcription request failed (${response.status}): ${extractErrorMessage(response.text)}`);
+		return {
+			ok: false,
+			error: new Error(`OpenRouter transcription request failed (${response.status}): ${extractErrorMessage(response.text)}`),
+		};
 	}
 
-	return extractTranscriptTextFromResponse(parseJson(response.text));
+	try {
+		return {ok: true, text: extractTranscriptTextFromResponse(parseJson(response.text))};
+	} catch (error) {
+		return {ok: false, error: error instanceof Error ? error : new Error(String(error))};
+	}
 }
 
 function parseTranscriptionResult(rawText: string): TranscriptionResult {

@@ -13,6 +13,7 @@ import {
 	getAudioFormat,
 	OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 	OPENROUTER_CHAT_COMPLETIONS_URL,
+	OPENROUTER_FALLBACK_TRANSCRIPTION_MODEL,
 	OPENROUTER_TITLE_PROVIDER,
 	OPENROUTER_TITLE_MODEL,
 	OPENROUTER_TRANSCRIPTION_MODEL,
@@ -80,7 +81,8 @@ void test("OpenRouter constants match the documented API contract", () => {
 	assert.equal(OPENROUTER_AUDIO_TRANSCRIPTIONS_URL, "https://openrouter.ai/api/v1/audio/transcriptions");
 	assert.equal(OPENROUTER_TITLE_MODEL, "openai/gpt-oss-120b");
 	assert.deepEqual(OPENROUTER_TITLE_PROVIDER, {order: ["cerebras/fp16", "groq", "deepinfra/turbo", "baseten/fp4"]});
-	assert.equal(OPENROUTER_TRANSCRIPTION_MODEL, "openai/whisper-large-v3-turbo");
+	assert.equal(OPENROUTER_TRANSCRIPTION_MODEL, "nvidia/parakeet-tdt-0.6b-v3");
+	assert.equal(OPENROUTER_FALLBACK_TRANSCRIPTION_MODEL, "openai/whisper-large-v3-turbo");
 });
 
 void test("createTranscriptionRequestBody matches the OpenRouter audio transcription format", () => {
@@ -439,6 +441,33 @@ void test("requestTranscriptText sends only the audio transcription request", as
 			format: "webm",
 		},
 	});
+});
+
+void test("requestTranscriptText falls back to Whisper when the primary model fails", async () => {
+	const capturedModels: string[] = [];
+	const transcript = await requestTranscriptText({
+		apiKey: "test-key",
+		audioBuffer: Uint8Array.from([1, 2, 3]).buffer,
+		audioFormat: "webm",
+		requestUrl: async (request) => {
+			const body = JSON.parse(request.body) as {model: string};
+			capturedModels.push(body.model);
+			if (body.model === OPENROUTER_TRANSCRIPTION_MODEL) {
+				return {
+					status: 503,
+					text: JSON.stringify({error: {message: "primary unavailable"}}),
+				};
+			}
+
+			return {
+				status: 200,
+				text: JSON.stringify({text: "fallback transcript"}),
+			};
+		},
+	});
+
+	assert.equal(transcript, "fallback transcript");
+	assert.deepEqual(capturedModels, [OPENROUTER_TRANSCRIPTION_MODEL, OPENROUTER_FALLBACK_TRANSCRIPTION_MODEL]);
 });
 
 void test("requestTranscription rejects blank API keys before reading requests", async () => {

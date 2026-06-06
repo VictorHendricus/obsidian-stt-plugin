@@ -306,3 +306,4 @@ high: 80, low: 75, break: 75
 ## Hints
 
 - use nvm for quality gate due to node version mismatch
+- command to push update to obisidian: cp manifest.json main.js styles.css '/home/oleksii/Documents/Bibliotheka/.obsidian/plugins/test-plugin'

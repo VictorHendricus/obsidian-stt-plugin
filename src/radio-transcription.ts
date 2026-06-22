@@ -9,9 +9,9 @@ export interface RecordedAudio {
 export type RequestUrlAdapter = (request: RequestUrlParam) => Promise<{status: number; text: string}>;
 
 const RECORDER_FORMATS: Array<{mimeType: string; format: string}> = [
+	{mimeType: "audio/mp4", format: "m4a"},
 	{mimeType: "audio/webm;codecs=opus", format: "webm"},
 	{mimeType: "audio/webm", format: "webm"},
-	{mimeType: "audio/mp4", format: "m4a"},
 	{mimeType: "audio/mpeg", format: "mp3"},
 	{mimeType: "audio/ogg;codecs=opus", format: "ogg"},
 	{mimeType: "audio/ogg", format: "ogg"},

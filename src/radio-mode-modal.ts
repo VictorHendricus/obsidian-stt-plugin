@@ -1,5 +1,6 @@
 import {Modal, Notice, requestUrl, setIcon, type App} from "obsidian";
 import type ObsidianSttPlugin from "./main.ts";
+import {saveRecordedAudioAttachment} from "./radio-recording-save.ts";
 import {
 	formatRadioTranscriptWithSummary,
 	getRecordedAudioFormat,
@@ -134,9 +135,10 @@ export class RadioModeModal extends Modal {
 
 		this.isSubmitting = true;
 		this.showSubmittingState(action === "summarize" ? "Transcribing and summarizing..." : "Transcribing...");
+		let audio: RecordedAudio | null = null;
 
 		try {
-			const audio = await this.stopAndReadRecording();
+			audio = await this.stopAndReadRecording();
 			const transcript = await transcribeRecordedAudio({
 				apiKey: this.plugin.settings.apiKey,
 				audio,
@@ -171,10 +173,30 @@ export class RadioModeModal extends Modal {
 			this.close();
 		} catch (error) {
 			console.error("Radio mode submission failed", error);
+			await this.saveFailedSubmissionRecording(audio);
 			const message = error instanceof Error ? error.message : "Radio mode failed.";
 			new Notice(message);
 			this.isSubmitting = false;
 			this.close();
+		}
+	}
+
+	private async saveFailedSubmissionRecording(audio: RecordedAudio | null): Promise<void> {
+		if (!audio) {
+			return;
+		}
+
+		try {
+			const activeFile = this.app.workspace.getActiveFile();
+			const attachment = await saveRecordedAudioAttachment({
+				app: this.app,
+				audio,
+				sourcePath: activeFile?.path,
+			});
+			new Notice(`Saved failed recording to ${attachment.path}`);
+		} catch (saveError) {
+			console.error("Could not save failed radio mode recording", saveError);
+			new Notice("Could not save the failed recording.");
 		}
 	}
 

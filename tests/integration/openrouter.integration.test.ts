@@ -11,11 +11,11 @@ import {
 	requestTranscription,
 	type RequestUrlRequest,
 	type RequestUrlResponse,
-} from "../src/openrouter.ts";
+} from "../../src/openrouter.ts";
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim() ?? "";
 const fixtureFileName = process.env.OPENROUTER_AUDIO_FIXTURE?.trim() || "How to Convert Audio to MP3 - Pixel & Bracket.mp3";
-const fixturePath = path.resolve("tests", fixtureFileName);
+const fixturePath = path.resolve("tests", "integration", "fixtures", fixtureFileName);
 
 void test(
 	"requestTranscription transcribes the real audio fixture through OpenRouter",

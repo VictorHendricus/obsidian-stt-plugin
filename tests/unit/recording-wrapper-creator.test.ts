@@ -6,8 +6,8 @@ import {
 	OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
 	OPENROUTER_CHAT_COMPLETIONS_URL,
 	type RequestUrlRequest,
-} from "../src/openrouter.ts";
-import {transcribeRecordingIntoWrapper} from "../src/recording-wrapper-creator.ts";
+} from "../../src/openrouter.ts";
+import {transcribeRecordingIntoWrapper} from "../../src/recording-wrapper-creator.ts";
 
 void test("transcribeRecordingIntoWrapper creates a root wrapper with the generated title", async () => {
 	const app = createFakeApp();

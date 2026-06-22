@@ -2,8 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type {App, TFile} from "obsidian";
-import {createRecordingAttachmentFilename, saveRecordedAudioAttachment} from "../src/radio-recording-save.ts";
-import {formatRadioTranscriptWithSummary, getRecordedAudioFormat, selectRecorderFormat} from "../src/radio-transcription.ts";
+import {createRecordingAttachmentFilename, saveRecordedAudioAttachment} from "../../src/radio-recording-save.ts";
+import {formatRadioTranscriptWithSummary, getRecordedAudioFormat, selectRecorderFormat} from "../../src/radio-transcription.ts";
 
 void test("selectRecorderFormat prefers mobile-friendly mp4 when supported", () => {
 	const selected = selectRecorderFormat((mimeType) => mimeType === "audio/mp4" || mimeType === "audio/webm;codecs=opus");

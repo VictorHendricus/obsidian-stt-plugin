@@ -24,7 +24,7 @@ import {
 	TITLE_RESPONSE_FORMAT,
 	type RequestTranscriptionParams,
 	type RequestUrlRequest,
-} from "../src/openrouter.ts";
+} from "../../src/openrouter.ts";
 
 void test("encodeArrayBufferToBase64 encodes raw audio bytes", () => {
 	const buffer = Uint8Array.from([0, 1, 2, 3, 255]).buffer;

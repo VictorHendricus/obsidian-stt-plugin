@@ -1,7 +1,7 @@
 /* eslint-disable import/no-nodejs-modules */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createPluginTestingApi} from "../src/testing/plugin-testing-api.ts";
+import {createPluginTestingApi} from "../../src/testing/plugin-testing-api.ts";
 
 void test("testing API assertions fail with useful messages", () => {
 	const api = createPluginTestingApi();

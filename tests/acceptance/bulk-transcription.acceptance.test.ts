@@ -1,6 +1,6 @@
 /* eslint-disable import/no-nodejs-modules */
 import test from "node:test";
-import {createPluginTestingApi} from "../src/testing/plugin-testing-api.ts";
+import {createPluginTestingApi} from "../../src/testing/plugin-testing-api.ts";
 
 const fileTranscribeEntryPoints = ["ribbon button", "command palette button"] as const;
 

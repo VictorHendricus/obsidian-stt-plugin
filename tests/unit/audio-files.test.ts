@@ -1,7 +1,7 @@
 /* eslint-disable import/no-nodejs-modules */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isAudioFile, isSupportedAudioFilePath, sortSupportedAudioFiles} from "../src/audio-files.ts";
+import {isAudioFile, isSupportedAudioFilePath, sortSupportedAudioFiles} from "../../src/audio-files.ts";
 
 void test("isSupportedAudioFilePath matches supported audio extensions case-insensitively", () => {
 	assert.equal(isSupportedAudioFilePath("Recordings/clip.m4a"), true);

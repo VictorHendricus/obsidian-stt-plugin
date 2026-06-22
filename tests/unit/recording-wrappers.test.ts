@@ -1,14 +1,14 @@
 /* eslint-disable import/no-nodejs-modules */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createTranscriptionNoteBasename} from "../src/note-titles.ts";
+import {createTranscriptionNoteBasename} from "../../src/note-titles.ts";
 import {
 	applyFailedTranscriptionToWrapper,
 	applyProcessingTranscriptionToWrapper,
 	applyTranscriptionToWrapper,
 	formatPendingVoiceNoteWrapperContent,
 	formatRawVoiceNoteWrapperContent,
-} from "../src/recording-wrappers.ts";
+} from "../../src/recording-wrappers.ts";
 
 const wrapperFixture = {
 	title: "idea",

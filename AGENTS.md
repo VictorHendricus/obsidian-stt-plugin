@@ -273,7 +273,7 @@ npm run quality
 Thresholds:
 
 - Coverage >= 80%
-- Cyclomatic complexity <= 8
+- Cyclomatic complexity <= 6
 - CRAP index <= 30
 - Duplication <= 3%
 
@@ -287,7 +287,7 @@ Rules:
 - Do not suppress complexity, CRAP, or duplication violations without refactoring.
 - If a gate cannot run because tooling is unavailable, report the exact failure.
 
-## Hyper-quality gate
+## Mutation testing
 
 When asked by the user run:
 
@@ -302,6 +302,8 @@ Threshold:
 
 Stryker config:
 high: 80, low: 75, break: 75
+
+After running kill mutants
 
 ## Hints
 

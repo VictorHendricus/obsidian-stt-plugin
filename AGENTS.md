@@ -327,6 +327,7 @@ After running kill mutants
   - `api.when.*` for user-visible actions
   - `api.then.*` for observable outcomes
 - Do not add testing API helpers that do not map to `Given`, `When`, or `Then`. Prefer a unit test helper or production abstraction instead.
+- Delete testing API helpers when `npm run test-api:audit` reports them unused; review helpers that are used only by `plugin-testing-api.test.ts`.
 - Unit tests can call production modules directly when behavior is local and deterministic.
 
 

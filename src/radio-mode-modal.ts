@@ -8,6 +8,7 @@ import {
 	summarizeRecordedTranscript,
 	transcribeRecordedAudio,
 	type RecordedAudio,
+	type RadioTranscriptionStatusEvent,
 } from "./radio-transcription.ts";
 
 type RadioModeSubmit = (transcript: string) => void;
@@ -24,6 +25,10 @@ export class RadioModeModal extends Modal {
 	private elapsedTimer = 0;
 	private insertButton: HTMLButtonElement | null = null;
 	private mediaRecorder: MediaRecorder | null = null;
+	private statusEl: HTMLElement | null = null;
+	private statusMessage = "Recording";
+	private statusStartedAt = 0;
+	private statusTimer = 0;
 	private summarizeButton: HTMLButtonElement | null = null;
 	private startedAt = 0;
 	private stream: MediaStream | null = null;
@@ -51,6 +56,7 @@ export class RadioModeModal extends Modal {
 		this.stopRecording();
 		this.stopVisualizer();
 		this.stopElapsedTimer();
+		this.stopStatusTimer();
 		this.chunks.length = 0;
 		if (!this.isSubmitting) {
 			this.complete();
@@ -87,7 +93,7 @@ export class RadioModeModal extends Modal {
 		});
 
 		this.elapsedEl = container.createDiv({cls: "obsidian-stt-radio-time", text: "0:00"});
-		container.createDiv({cls: "obsidian-stt-radio-status", text: "Recording"});
+		this.statusEl = container.createDiv({cls: "obsidian-stt-radio-status", text: "Recording"});
 		container.createDiv({cls: "obsidian-stt-radio-visualizer"});
 	}
 
@@ -134,7 +140,7 @@ export class RadioModeModal extends Modal {
 		}
 
 		this.isSubmitting = true;
-		this.showSubmittingState(action === "summarize" ? "Transcribing and summarizing..." : "Transcribing...");
+		this.showSubmittingState(action === "summarize" ? "Preparing summary..." : "Preparing transcription...");
 		let audio: RecordedAudio | null = null;
 
 		try {
@@ -142,6 +148,7 @@ export class RadioModeModal extends Modal {
 			const transcript = await transcribeRecordedAudio({
 				apiKey: this.plugin.settings.apiKey,
 				audio,
+				onStatus: (event) => this.showTranscriptionStatus(event),
 				requestUrl: async (request) => {
 					const response = await requestUrl(request);
 					return {
@@ -152,7 +159,7 @@ export class RadioModeModal extends Modal {
 			});
 
 			if (action === "summarize") {
-				this.showSubmittingState("Summarizing...");
+				this.showTimedStatus("Processing summary");
 				const summary = await summarizeRecordedTranscript({
 					apiKey: this.plugin.settings.apiKey,
 					transcript,
@@ -173,6 +180,7 @@ export class RadioModeModal extends Modal {
 			this.close();
 		} catch (error) {
 			console.error("Radio mode submission failed", error);
+			this.showTimedStatus("Saving recording");
 			await this.saveFailedSubmissionRecording(audio);
 			const message = error instanceof Error ? error.message : "Radio mode failed.";
 			new Notice(message);
@@ -209,10 +217,21 @@ export class RadioModeModal extends Modal {
 		}
 
 		this.contentEl.addClass("is-transcribing");
-		const statusEl = this.contentEl.querySelector(".obsidian-stt-radio-status");
-		if (statusEl instanceof HTMLElement) {
-			statusEl.setText(message);
+		this.showTimedStatus(message);
+	}
+
+	private showTranscriptionStatus(event: RadioTranscriptionStatusEvent): void {
+		if (event.status === "sending") {
+			this.showTimedStatus(`Sending request #${event.attempt}`);
+			return;
 		}
+
+		if (event.status === "processing") {
+			this.showTimedStatus("Processing");
+			return;
+		}
+
+		this.showTimedStatus(`Request #${event.attempt} failed`);
 	}
 
 	private setActionButtonsDisabled(disabled: boolean): void {
@@ -295,6 +314,43 @@ export class RadioModeModal extends Modal {
 		if (this.elapsedTimer) {
 			window.clearInterval(this.elapsedTimer);
 			this.elapsedTimer = 0;
+		}
+	}
+
+	private showTimedStatus(message: string): void {
+		this.statusMessage = message;
+		this.statusStartedAt = Date.now();
+		this.updateStatusText();
+		this.restartStatusTimer();
+	}
+
+	private restartStatusTimer(): void {
+		this.stopStatusTimer();
+		this.statusTimer = window.setInterval(() => this.updateStatusText(), 1000);
+	}
+
+	private updateStatusText(): void {
+		if (!this.statusEl) {
+			return;
+		}
+
+		this.statusEl.setText(`${this.statusMessage} ${this.formatElapsedSeconds(this.getStatusElapsedSeconds())}`);
+	}
+
+	private getStatusElapsedSeconds(): number {
+		return Math.max(0, Math.floor((Date.now() - this.statusStartedAt) / 1000));
+	}
+
+	private formatElapsedSeconds(elapsedSeconds: number): string {
+		const minutes = Math.floor(elapsedSeconds / 60);
+		const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+		return `${minutes}:${seconds}`;
+	}
+
+	private stopStatusTimer(): void {
+		if (this.statusTimer) {
+			window.clearInterval(this.statusTimer);
+			this.statusTimer = 0;
 		}
 	}
 

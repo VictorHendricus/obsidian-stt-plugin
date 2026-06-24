@@ -3,7 +3,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type {App, TFile} from "obsidian";
 import {createRecordingAttachmentFilename, saveRecordedAudioAttachment} from "../../src/radio-recording-save.ts";
-import {formatRadioTranscriptWithSummary, getRecordedAudioFormat, selectRecorderFormat} from "../../src/radio-transcription.ts";
+import {
+	formatRadioTranscriptWithSummary,
+	getRecordedAudioFormat,
+	selectRecorderFormat,
+	transcribeRecordedAudio,
+	type RadioTranscriptionStatusEvent,
+} from "../../src/radio-transcription.ts";
 
 void test("selectRecorderFormat prefers mobile-friendly mp4 when supported", () => {
 	const selected = selectRecorderFormat((mimeType) => mimeType === "audio/mp4" || mimeType === "audio/webm;codecs=opus");
@@ -56,6 +62,72 @@ void test("formatRadioTranscriptWithSummary matches the note insertion structure
 			"        - Point 1",
 			"        - Point 2",
 		].join("\n"),
+	);
+});
+
+void test("transcribeRecordedAudio retries failed radio transcription requests", async () => {
+	const events: RadioTranscriptionStatusEvent[] = [];
+	let requestCount = 0;
+
+	const transcript = await transcribeRecordedAudio({
+		apiKey: "test-key",
+		audio: {buffer: Uint8Array.from([1, 2, 3]).buffer, format: "m4a"},
+		onStatus: (event) => events.push(event),
+		requestUrl: async () => {
+			requestCount += 1;
+			if (requestCount <= 2) {
+				return {
+					status: 503,
+					text: JSON.stringify({error: {message: "try again"}}),
+				};
+			}
+
+			return {
+				status: 200,
+				text: JSON.stringify({text: "radio transcript"}),
+			};
+		},
+	});
+
+	assert.equal(transcript, "radio transcript");
+	assert.deepEqual(
+		events.map(({attempt, status}) => ({attempt, status})),
+		[
+			{attempt: 1, status: "sending"},
+			{attempt: 1, status: "failed"},
+			{attempt: 2, status: "sending"},
+			{attempt: 2, status: "processing"},
+		],
+	);
+	assert.equal(requestCount, 3);
+});
+
+void test("transcribeRecordedAudio reports three failed radio attempts before rejecting", async () => {
+	const events: RadioTranscriptionStatusEvent[] = [];
+
+	await assert.rejects(
+		transcribeRecordedAudio({
+			apiKey: "test-key",
+			audio: {buffer: Uint8Array.from([1, 2, 3]).buffer, format: "m4a"},
+			onStatus: (event) => events.push(event),
+			requestUrl: async () => ({
+				status: 503,
+				text: JSON.stringify({error: {message: "unavailable"}}),
+			}),
+		}),
+		/OpenRouter transcription request failed \(503\): unavailable/,
+	);
+
+	assert.deepEqual(
+		events.map(({attempt, status}) => ({attempt, status})),
+		[
+			{attempt: 1, status: "sending"},
+			{attempt: 1, status: "failed"},
+			{attempt: 2, status: "sending"},
+			{attempt: 2, status: "failed"},
+			{attempt: 3, status: "sending"},
+			{attempt: 3, status: "failed"},
+		],
 	);
 });
 

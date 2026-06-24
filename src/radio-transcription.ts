@@ -7,6 +7,15 @@ export interface RecordedAudio {
 }
 
 export type RequestUrlAdapter = (request: RequestUrlParam) => Promise<{status: number; text: string}>;
+export type RadioTranscriptionStatus = "sending" | "processing" | "failed";
+
+export interface RadioTranscriptionStatusEvent {
+	attempt: number;
+	status: RadioTranscriptionStatus;
+	error?: unknown;
+}
+
+const RADIO_TRANSCRIPTION_ATTEMPTS = 3;
 
 const RECORDER_FORMATS: Array<{mimeType: string; format: string}> = [
 	{mimeType: "audio/mp4", format: "m4a"},
@@ -52,13 +61,28 @@ export async function transcribeRecordedAudio(params: {
 	apiKey: string;
 	audio: RecordedAudio;
 	requestUrl: RequestUrlAdapter;
+	onStatus?: (event: RadioTranscriptionStatusEvent) => void;
 }): Promise<string> {
-	return requestTranscriptText({
-		apiKey: params.apiKey,
-		audioBuffer: params.audio.buffer,
-		audioFormat: params.audio.format,
-		requestUrl: params.requestUrl,
-	});
+	let lastError: unknown = null;
+
+	for (let attempt = 1; attempt <= RADIO_TRANSCRIPTION_ATTEMPTS; attempt += 1) {
+		try {
+			params.onStatus?.({attempt, status: "sending"});
+			const transcript = await requestTranscriptText({
+				apiKey: params.apiKey,
+				audioBuffer: params.audio.buffer,
+				audioFormat: params.audio.format,
+				requestUrl: params.requestUrl,
+			});
+			params.onStatus?.({attempt, status: "processing"});
+			return transcript;
+		} catch (error) {
+			lastError = error;
+			params.onStatus?.({attempt, status: "failed", error});
+		}
+	}
+
+	throw lastError instanceof Error ? lastError : new Error("Radio mode transcription failed.");
 }
 
 export async function summarizeRecordedTranscript(params: {

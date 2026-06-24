@@ -249,9 +249,12 @@ this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
 - Developer policies: https://docs.obsidian.md/Developer+policies
 - Plugin guidelines: https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
 - Style guide: https://help.obsidian.md/style-guide
-- important constraints you must follow @CONSTRAINTS.md(if user request violates constraints, then stop and discuss)
 
-# Quality Gates
+---
+
+# QA
+
+## Quality Gates
 
 Before marking work complete, run the project quality gate.
 
@@ -305,7 +308,18 @@ high: 80, low: 75, break: 75
 
 After running kill mutants
 
-## Hints
+# Constraints
 
-- use nvm for quality gate due to node version mismatch
+- Keep the plugin mobile-friendly: `manifest.json` should keep `isDesktopOnly: false` unless the feature genuinely requires desktop-only APIs.
+- Do not import `fs`, `path`, Electron, or other desktop-only APIs at top level.
+- Read audio through Obsidian APIs, especially `this.app.vault.readBinary(file)`, and send network requests through Obsidian `requestUrl`.
+- OpenRouter transcription and text generation are separate flows: transcription uses the audio transcription endpoint; title and summary generation use the chat completions endpoint.
+- If a user request would violate these constraints, stop and discuss the tradeoff before implementing it.
+
+# Features
+
+
+
+# Hints
+
 - command to push update to obisidian: cp manifest.json main.js styles.css '/home/oleksii/Documents/Bibliotheka/.obsidian/plugins/test-plugin'

@@ -30,8 +30,7 @@ export class RecordingPickerModal extends Modal {
 	}
 
 	onOpen(): void {
-		// eslint-disable-next-line obsidianmd/ui/sentence-case
-		this.setTitle("File Transcribe");
+		this.setTitle("Bulk transcribe");
 		this.contentEl.empty();
 		this.contentEl.addClass("obsidian-stt-recording-picker");
 

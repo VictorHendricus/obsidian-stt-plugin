@@ -11,11 +11,6 @@ import {
 	type RecordingCandidate,
 } from "./recording-wrappers.ts";
 
-export interface RecordingWrapperCreationResult {
-	created: number;
-	skipped: number;
-}
-
 export interface BulkTranscriptionResult {
 	created: number;
 	transcribed: number;
@@ -32,24 +27,6 @@ export interface TranscribeRecordingIntoWrapperResult {
 
 export type RequestUrlAdapter = (request: RequestUrlParam) => Promise<{status: number; text: string}>;
 const DEFAULT_BULK_TRANSCRIPTION_CONCURRENCY = 3;
-
-export async function createMissingRecordingWrappers(app: App, now: () => Date = () => new Date()): Promise<RecordingWrapperCreationResult> {
-	const candidates = buildRecordingCandidates(app);
-	let created = 0;
-	let skipped = 0;
-
-	for (const candidate of candidates) {
-		if (candidate.status === "wrapped") {
-			skipped += 1;
-			continue;
-		}
-
-		await createRecordingWrapper(app, candidate.audio, now());
-		created += 1;
-	}
-
-	return {created, skipped};
-}
 
 export async function bulkTranscribeRecordings(params: {
 	app: App;

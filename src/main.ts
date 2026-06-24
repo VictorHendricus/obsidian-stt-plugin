@@ -19,8 +19,7 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		this.addCommand({
 			id: "file-transcribe",
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			name: "File Transcribe",
+			name: "Bulk transcribe",
 			callback: async () => {
 				this.openRecordingPicker();
 			},
@@ -42,8 +41,7 @@ export default class ObsidianSttPlugin extends Plugin {
 			},
 		});
 
-		// eslint-disable-next-line obsidianmd/ui/sentence-case
-		this.addRibbonIcon("file-audio", "File Transcribe", () => {
+		this.addRibbonIcon("file-audio", "Bulk transcribe", () => {
 			this.openRecordingPicker();
 		});
 
@@ -77,7 +75,7 @@ export default class ObsidianSttPlugin extends Plugin {
 				await this.handleRecordingCandidate(candidate);
 			},
 			onTranscribeAll: async () => {
-				await this.fileTranscribeAll();
+				await this.bulkTranscribeAll();
 			},
 		}).open();
 	}
@@ -195,7 +193,7 @@ export default class ObsidianSttPlugin extends Plugin {
 		await this.app.workspace.getLeaf(false).openFile(wrapper);
 	}
 
-	private async fileTranscribeAll(): Promise<void> {
+	private async bulkTranscribeAll(): Promise<void> {
 		const apiKey = this.settings.apiKey.trim();
 		if (!apiKey) {
 			// eslint-disable-next-line obsidianmd/ui/sentence-case
@@ -209,7 +207,7 @@ export default class ObsidianSttPlugin extends Plugin {
 
 		const targetCount = countBulkTranscriptionTargets(buildRecordingCandidates(this.app));
 		if (targetCount > 0) {
-			new Notice(`${targetCount} recording${targetCount === 1 ? "" : "s"} need transcription. Starting File Transcribe.`);
+			new Notice(`${targetCount} recording${targetCount === 1 ? "" : "s"} need transcription. Starting bulk transcribe.`);
 		}
 
 		this.isTranscribing = true;
@@ -227,7 +225,7 @@ export default class ObsidianSttPlugin extends Plugin {
 				},
 			});
 
-			new Notice(formatFileTranscribeNotice(result));
+			new Notice(formatBulkTranscribeNotice(result));
 		} finally {
 			this.isTranscribing = false;
 		}
@@ -242,10 +240,10 @@ function shouldBulkTranscribeCandidate(candidate: RecordingCandidate): boolean {
 	return !candidate.wrapper || candidate.transcriptStatus === "raw" || candidate.transcriptStatus === "failed" || candidate.transcriptStatus === "pending" || candidate.transcriptStatus === "processing";
 }
 
-function formatFileTranscribeNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {
+function formatBulkTranscribeNotice(result: {created: number; transcribed: number; failed: number; skipped: number}): string {
 	if (result.transcribed === 0 && result.failed === 0 && result.created === 0) {
 		return "No recordings need transcription.";
 	}
 
-	return `File Transcribe complete: ${result.transcribed} transcribed, ${result.failed} failed, ${result.created} wrapper${result.created === 1 ? "" : "s"} created.`;
+	return `Bulk transcribe complete: ${result.transcribed} transcribed, ${result.failed} failed, ${result.created} wrapper${result.created === 1 ? "" : "s"} created.`;
 }

@@ -2,10 +2,10 @@
 import test from "node:test";
 import {createPluginTestingApi} from "../../src/testing/plugin-testing-api.ts";
 
-const fileTranscribeEntryPoints = ["ribbon button", "command palette button"] as const;
+const bulkTranscribeEntryPoints = ["ribbon button", "command palette button"] as const;
 
-for (const entryPoint of fileTranscribeEntryPoints) {
-	void test(`user opens File Transcribe from the ${entryPoint} and transcribes all unwrapped recordings`, async () => {
+for (const entryPoint of bulkTranscribeEntryPoints) {
+	void test(`user opens bulk transcribe from the ${entryPoint} and transcribes all unwrapped recordings`, async () => {
 		const api = createPluginTestingApi();
 		const paths = ["Recordings/2025.m4a", "Recordings/2026.m4a"];
 
@@ -13,7 +13,7 @@ for (const entryPoint of fileTranscribeEntryPoints) {
 			api.given.unwrappedAudio(path);
 		}
 
-		const modal = await api.when.fileTranscribe(entryPoint);
+		const modal = await api.when.bulkTranscribe(entryPoint);
 		await modal.transcribeAll();
 
 		api.then.transcription.expectRequests(paths);
@@ -30,16 +30,17 @@ for (const entryPoint of fileTranscribeEntryPoints) {
 	});
 }
 
-void test("user uses File Transcribe all and skips already transcribed recordings", async () => {
+void test("user uses bulk transcribe and skips already transcribed recordings", async () => {
 	const api = createPluginTestingApi();
 
 	api.given.unwrappedAudio("Recordings/idea.m4a");
 	api.given.transcribedAudio("Recordings/done.m4a");
 
-	const modal = await api.when.fileTranscribe("ribbon button");
+	const modal = await api.when.bulkTranscribe("ribbon button");
 	await modal.transcribeAll();
 
 	api.then.transcription.expectRequest("Recordings/idea.m4a");
+	api.then.transcription.expectRequestCount(1);
 	api.then.transcription.expectNoRequestFor("Recordings/done.m4a");
 	api.then.wrapper.expectCreated("Recordings/idea.m4a");
 	api.then.wrapper.expectNotCreated("Recordings/done.m4a");
@@ -50,7 +51,7 @@ void test("user chooses a single unwrapped recording without inserting an editor
 
 	api.given.unwrappedAudio("Recordings/idea.m4a");
 
-	const modal = await api.when.fileTranscribe("command palette button");
+	const modal = await api.when.bulkTranscribe("command palette button");
 	await modal.chooseRecording("Recordings/idea.m4a");
 
 	api.then.transcription.expectRequest("Recordings/idea.m4a");
@@ -67,7 +68,7 @@ void test("user chooses a single already-transcribed recording without sending a
 
 	api.given.transcribedAudio("Recordings/done.m4a");
 
-	const modal = await api.when.fileTranscribe("command palette button");
+	const modal = await api.when.bulkTranscribe("command palette button");
 	await modal.chooseRecording("Recordings/done.m4a");
 
 	api.then.transcription.expectNoRequest();
@@ -76,10 +77,10 @@ void test("user chooses a single already-transcribed recording without sending a
 	api.then.workspace.expectOpenedWrapper("Recordings/done.m4a");
 });
 
-void test("user opens File Transcribe and sees an empty-state notice when there are no matching recordings", async () => {
+void test("user opens bulk transcribe and sees an empty-state notice when there are no matching recordings", async () => {
 	const api = createPluginTestingApi();
 
-	const modal = await api.when.fileTranscribe("ribbon button");
+	const modal = await api.when.bulkTranscribe("ribbon button");
 	await modal.transcribeAll();
 
 	api.then.transcription.expectNoRequest();

@@ -7,11 +7,7 @@ import {
 	OPENROUTER_CHAT_COMPLETIONS_URL,
 	type RequestUrlRequest,
 } from "../openrouter.ts";
-import {
-	bulkTranscribeRecordings,
-	createMissingRecordingWrappers,
-	transcribeRecordingIntoWrapper,
-} from "../recording-wrapper-creator.ts";
+import {bulkTranscribeRecordings, transcribeRecordingIntoWrapper} from "../recording-wrapper-creator.ts";
 import {buildRecordingCandidates, getTranscriptStatus} from "../recording-wrappers.ts";
 
 type EntryPoint = "ribbon button" | "command palette button";
@@ -28,12 +24,10 @@ interface TestingState {
 export interface PluginTestingApi {
 	given: {
 		unwrappedAudio(path: string): void;
-		wrappedAudio(path: string): void;
 		transcribedAudio(path: string): void;
 	};
 	when: {
-		createMissingRecordingWrappers(entryPoint?: EntryPoint): Promise<void>;
-		fileTranscribe(entryPoint?: EntryPoint): Promise<{
+		bulkTranscribe(entryPoint?: EntryPoint): Promise<{
 			transcribeAll(): Promise<void>;
 			chooseRecording(path: string): Promise<void>;
 		}>;
@@ -94,10 +88,6 @@ function createGivenApi(state: TestingState): PluginTestingApi["given"] {
 		unwrappedAudio(path) {
 			state.app.addAudio(path);
 		},
-		wrappedAudio(path) {
-			const audio = state.app.addAudio(path);
-			state.app.addMarkdown(adjacentWrapperPath(audio), rawWrapperContent(audio));
-		},
 		transcribedAudio(path) {
 			const audio = state.app.addAudio(path);
 			state.app.addMarkdown(adjacentWrapperPath(audio), transcribedWrapperContent(audio));
@@ -107,12 +97,7 @@ function createGivenApi(state: TestingState): PluginTestingApi["given"] {
 
 function createWhenApi(state: TestingState): PluginTestingApi["when"] {
 	return {
-		async createMissingRecordingWrappers() {
-			const before = markdownPaths(state);
-			await createMissingRecordingWrappers(state.app.app, stableNow);
-			rememberCreatedWrappers(state, before);
-		},
-		async fileTranscribe() {
+		async bulkTranscribe() {
 			return {
 				async transcribeAll() {
 					const before = markdownPaths(state);
@@ -455,22 +440,6 @@ function extractTranscriptionFromChatBody(body: {messages?: unknown[]}): string 
 	const content = message.content as unknown[];
 	const lastContent = content[content.length - 1];
 	return isRecord(lastContent) && typeof lastContent.text === "string" ? lastContent.text : "";
-}
-
-function rawWrapperContent(audio: TFile): string {
-	return [
-		"---",
-		"type: voice-note",
-		`source: "[[${audio.path}]]"`,
-		"status: raw",
-		"---",
-		`# ${audio.basename}`,
-		"## Audio",
-		`![[${audio.path}]]`,
-		"## Transcript",
-		"Not transcribed yet.",
-		"",
-	].join("\n");
 }
 
 function transcribedWrapperContent(audio: TFile): string {

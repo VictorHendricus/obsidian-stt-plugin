@@ -22,7 +22,7 @@ Editable OpenRouter prompts live in `src/ai-prompts.ts`.
 ## Usage
 
 1. Open the plugin settings and paste your OpenRouter API key.
-2. Run `File Transcribe` from the command palette or select the ribbon button.
+2. Run `Bulk transcribe` from the command palette or select the ribbon button.
 3. Choose one recording, or select **Transcribe all**.
 4. Wait for transcription wrapper notes to be created or updated.
 

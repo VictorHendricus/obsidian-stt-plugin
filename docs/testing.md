@@ -52,28 +52,36 @@ The testing API provides a stable behavior-facing boundary:
 ```ts
 const api = createPluginTestingApi();
 
-api.vault.addUnwrappedAudio("Recordings/idea.m4a");
+api.given.unwrappedAudio("Recordings/idea.m4a");
 
-const modal = await api.plugin.fileTranscribe();
+const modal = await api.when.fileTranscribe();
 await modal.transcribeAll();
 
-api.wrapper.expectCreated();
-api.transcription.expectRequestCount(1);
-api.wrapper.expectStatus("transcribed");
-api.editor.expectNoInsertedLink();
-api.workspace.expectNoOpenedFile();
+api.then.wrapper.expectCreated();
+api.then.transcription.expectRequestCount(1);
+api.then.wrapper.expectStatus("transcribed");
+api.then.editor.expectNoInsertedLink();
+api.then.workspace.expectNoOpenedFile();
 ```
 
-Use the testing API when a test is expressing user-observable behavior from a feature file. This keeps acceptance-style tests from depending on private implementation details.
+Use the testing API when a test is expressing user-observable behavior from a feature file. This keeps acceptance-style tests from depending on private implementation details while still driving production modules through fake Obsidian boundaries.
 
 Current API areas:
 
-- `api.vault`: arrange vault/audio/wrapper state.
-- `api.plugin`: trigger user-facing plugin actions.
-- `api.transcription`: assert transcription request behavior.
-- `api.wrapper`: assert wrapper creation and status.
-- `api.editor`: assert editor side effects.
-- `api.workspace`: assert workspace/file-opening side effects.
+- `api.given`: arrange feature preconditions such as vault/audio/wrapper state.
+- `api.when`: trigger user-facing plugin actions.
+- `api.then.transcription`: assert transcription request behavior.
+- `api.then.wrapper`: assert wrapper creation and status.
+- `api.then.editor`: assert editor side effects.
+- `api.then.workspace`: assert workspace/file-opening side effects.
+
+New testing API vocabulary must map to a feature-file role:
+
+- `api.given.*` for `Given` preconditions.
+- `api.when.*` for `When` actions.
+- `api.then.*` for `Then` outcomes.
+
+If a proposed helper does not fit one of those roles, do not add it to the acceptance testing API. Prefer a unit test helper or a production abstraction instead.
 
 ## Unit Tests
 
@@ -130,18 +138,18 @@ When a feature needs a new behavior-facing operation, add it to `src/testing/plu
 Good testing API methods describe observable behavior:
 
 ```ts
-const modal = await api.plugin.fileTranscribe();
+const modal = await api.when.fileTranscribe();
 await modal.transcribeAll();
-api.wrapper.expectStatus("transcribed");
-api.transcription.expectNoRequest();
+api.then.wrapper.expectStatus("transcribed");
+api.then.transcription.expectNoRequest();
 ```
 
 Avoid exposing implementation details:
 
 ```ts
-api.plugin.callPrivateMethod();
-api.transcriber.setInternalQueue();
-api.wrapper.expectExactPrivateCacheShape();
+api.when.callPrivateMethod();
+api.given.internalTranscriberQueue();
+api.then.wrapper.expectExactPrivateCacheShape();
 ```
 
 The testing API should stay small. Add methods only when they make feature-level tests clearer.

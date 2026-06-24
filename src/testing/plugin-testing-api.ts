@@ -1,314 +1,576 @@
-type TranscriptStatus = "raw" | "transcribed";
+/* eslint-disable import/no-nodejs-modules */
+import assert from "node:assert/strict";
+import {Buffer} from "node:buffer";
+import type {App, RequestUrlParam, TAbstractFile, TFile, Vault} from "obsidian";
+import {
+	OPENROUTER_AUDIO_TRANSCRIPTIONS_URL,
+	OPENROUTER_CHAT_COMPLETIONS_URL,
+	type RequestUrlRequest,
+} from "../openrouter.ts";
+import {
+	bulkTranscribeRecordings,
+	createMissingRecordingWrappers,
+	transcribeRecordingIntoWrapper,
+} from "../recording-wrapper-creator.ts";
+import {buildRecordingCandidates, getTranscriptStatus} from "../recording-wrappers.ts";
 
-interface AudioRecord {
-	path: string;
-	wrapperCreated: boolean;
-	status: TranscriptStatus | null;
-	title: string | null;
-	transcript: string | null;
-}
+type EntryPoint = "ribbon button" | "command palette button";
 
 interface TestingState {
-	audio: AudioRecord[];
-	wrappersCreatedByAction: string[];
+	app: FakeObsidianApp;
 	transcriptionRequests: string[];
 	insertedLinks: string[];
 	openedFiles: string[];
 	notifications: string[];
+	wrappersCreatedByAction: string[];
 }
 
 export interface PluginTestingApi {
-	vault: {
-		addUnwrappedAudio(path: string): void;
-		addWrappedAudio(path: string): void;
-		addTranscribedAudio(path: string): void;
+	given: {
+		unwrappedAudio(path: string): void;
+		wrappedAudio(path: string): void;
+		transcribedAudio(path: string): void;
 	};
-	plugin: {
-		createMissingRecordingWrappers(entryPoint?: "ribbon button" | "command palette button"): Promise<void>;
-		fileTranscribe(entryPoint?: "ribbon button" | "command palette button"): Promise<{
+	when: {
+		createMissingRecordingWrappers(entryPoint?: EntryPoint): Promise<void>;
+		fileTranscribe(entryPoint?: EntryPoint): Promise<{
 			transcribeAll(): Promise<void>;
 			chooseRecording(path: string): Promise<void>;
 		}>;
 	};
-	transcription: {
-		expectNoRequest(): void;
-		expectRequest(path: string): void;
-		expectNoRequestFor(path: string): void;
-		expectRequests(paths: string[]): void;
-		expectRequestCount(expectedCount: number): void;
-	};
-	wrapper: {
-		expectCreated(path?: string): void;
-		expectNotCreated(path: string): void;
-		expectCreatedFor(paths: string[]): void;
-		expectCreatedCount(expectedCount: number): void;
-		expectStatus(status: string, path?: string): void;
-		expectGeneratedTitle(path?: string): void;
-		expectTranscriptReturnedForRecording(path?: string): void;
-	};
-	editor: {
-		expectNoInsertedLink(): void;
-	};
-	workspace: {
-		expectNoOpenedFile(): void;
-		expectOpenedWrapper(path: string): void;
-	};
-	notifications: {
-		expectEmitted(): void;
+	then: {
+		transcription: {
+			expectNoRequest(): void;
+			expectRequest(path: string): void;
+			expectNoRequestFor(path: string): void;
+			expectRequests(paths: string[]): void;
+			expectRequestCount(expectedCount: number): void;
+		};
+		wrapper: {
+			expectCreated(path?: string): void;
+			expectNotCreated(path: string): void;
+			expectCreatedFor(paths: string[]): void;
+			expectCreatedCount(expectedCount: number): void;
+			expectStatus(status: string, path?: string): void;
+			expectGeneratedTitle(path?: string): void;
+			expectTranscriptReturnedForRecording(path?: string): void;
+		};
+		editor: {
+			expectNoInsertedLink(): void;
+		};
+		workspace: {
+			expectNoOpenedFile(): void;
+			expectOpenedWrapper(path: string): void;
+		};
+		notifications: {
+			expectEmitted(): void;
+		};
 	};
 }
 
 export function createPluginTestingApi(): PluginTestingApi {
 	const state: TestingState = {
-		audio: [],
-		wrappersCreatedByAction: [],
+		app: createFakeObsidianApp(),
 		transcriptionRequests: [],
 		insertedLinks: [],
 		openedFiles: [],
 		notifications: [],
+		wrappersCreatedByAction: [],
 	};
 
+	const given = createGivenApi(state);
+	const when = createWhenApi(state);
+	const then = createThenApi(state);
+
 	return {
-		vault: createVaultApi(state),
-		plugin: createPluginApi(state),
-		transcription: createTranscriptionApi(state),
-		wrapper: createWrapperApi(state),
-		editor: createEditorApi(state),
-		workspace: createWorkspaceApi(state),
-		notifications: createNotificationsApi(state),
+		given,
+		when,
+		then,
 	};
 }
 
-function createVaultApi(state: TestingState): PluginTestingApi["vault"] {
+function createGivenApi(state: TestingState): PluginTestingApi["given"] {
 	return {
-		addUnwrappedAudio(path) {
-			addAudio(state, {path, wrapperCreated: false, status: null, title: null, transcript: null});
+		unwrappedAudio(path) {
+			state.app.addAudio(path);
 		},
-		addWrappedAudio(path) {
-			addAudio(state, {path, wrapperCreated: true, status: "raw", title: basename(path), transcript: null});
+		wrappedAudio(path) {
+			const audio = state.app.addAudio(path);
+			state.app.addMarkdown(adjacentWrapperPath(audio), rawWrapperContent(audio));
 		},
-		addTranscribedAudio(path) {
-			addAudio(state, {
-				path,
-				wrapperCreated: true,
-				status: "transcribed",
-				title: basename(path),
-				transcript: transcriptFor(path),
-			});
+		transcribedAudio(path) {
+			const audio = state.app.addAudio(path);
+			state.app.addMarkdown(adjacentWrapperPath(audio), transcribedWrapperContent(audio));
 		},
 	};
 }
 
-function createPluginApi(state: TestingState): PluginTestingApi["plugin"] {
+function createWhenApi(state: TestingState): PluginTestingApi["when"] {
 	return {
 		async createMissingRecordingWrappers() {
-			createMissingWrappers(state);
+			const before = markdownPaths(state);
+			await createMissingRecordingWrappers(state.app.app, stableNow);
+			rememberCreatedWrappers(state, before);
 		},
 		async fileTranscribe() {
 			return {
 				async transcribeAll() {
-					bulkTranscribe(state);
+					const before = markdownPaths(state);
+					const result = await bulkTranscribeRecordings({
+						app: state.app.app,
+						apiKey: "test-key",
+						requestUrl: createRequestUrlStub(state),
+						now: stableNow,
+						concurrency: 1,
+					});
+					rememberCreatedWrappers(state, before);
+
+					if (result.created + result.transcribed + result.failed === 0) {
+						state.notifications.push("No recordings need transcription.");
+					}
 				},
 				async chooseRecording(path: string) {
-					transcribeSingle(state, path);
+					const audio = state.app.getFile(path);
+					const candidate = buildRecordingCandidates(state.app.app).find((item) => item.audio.path === path);
+					assert.ok(candidate, `Expected audio file ${path} to exist.`);
+
+					if (candidate.wrapper && getTranscriptStatus(state.app.app, candidate.wrapper) === "transcribed") {
+						state.openedFiles.push(path);
+						return;
+					}
+
+					const before = markdownPaths(state);
+					const result = await transcribeRecordingIntoWrapper({
+						app: state.app.app,
+						apiKey: "test-key",
+						audio,
+						existingWrapper: candidate.wrapper,
+						requestUrl: createRequestUrlStub(state),
+						now: stableNow,
+					});
+					rememberCreatedWrappers(state, before);
+					state.openedFiles.push(audioPathFromWrapper(state, result.wrapper) ?? path);
 				},
 			};
 		},
 	};
 }
 
-function createTranscriptionApi(state: TestingState): PluginTestingApi["transcription"] {
+function createThenApi(state: TestingState): PluginTestingApi["then"] {
 	return {
-		expectNoRequest() {
-			expect(state.transcriptionRequests.length === 0, "Expected no transcription request to be sent.");
-		},
-		expectRequest(path) {
-			expect(
-				state.transcriptionRequests.includes(path),
-				`Expected a transcription request to be sent for ${path}.`,
-			);
-		},
-		expectNoRequestFor(path) {
-			expect(
-				!state.transcriptionRequests.includes(path),
-				`Expected no transcription request to be sent for ${path}.`,
-			);
-		},
-		expectRequests(paths) {
-			for (const path of paths) {
-				this.expectRequest(path);
-			}
+		transcription: {
+			expectNoRequest() {
+				assert.equal(state.transcriptionRequests.length, 0, "Expected no transcription request to be sent.");
+			},
+			expectRequest(path) {
+				assert.ok(
+					state.transcriptionRequests.includes(path),
+					`Expected a transcription request to be sent for ${path}.`,
+				);
+			},
+			expectNoRequestFor(path) {
+				assert.ok(
+					!state.transcriptionRequests.includes(path),
+					`Expected no transcription request to be sent for ${path}.`,
+				);
+			},
+			expectRequests(paths) {
+				for (const path of paths) {
+					this.expectRequest(path);
+				}
 
-			this.expectRequestCount(paths.length);
+				this.expectRequestCount(paths.length);
+			},
+			expectRequestCount(expectedCount) {
+				assert.equal(
+					state.transcriptionRequests.length,
+					expectedCount,
+					`Expected ${expectedCount} transcription request(s), got ${state.transcriptionRequests.length}.`,
+				);
+			},
 		},
-		expectRequestCount(expectedCount) {
-			expect(
-				state.transcriptionRequests.length === expectedCount,
-				`Expected ${expectedCount} transcription request(s), got ${state.transcriptionRequests.length}.`,
-			);
+		wrapper: {
+			expectCreated(path) {
+				const audio = findTargetAudio(state, path);
+				assert.ok(findWrapperForAudio(state, audio), `Expected a voice note wrapper for ${audio.path}.`);
+			},
+			expectNotCreated(path) {
+				assert.ok(
+					!state.wrappersCreatedByAction.includes(path),
+					`Expected no new voice note wrapper to be created for ${path}.`,
+				);
+			},
+			expectCreatedFor(paths) {
+				for (const path of paths) {
+					this.expectCreated(path);
+				}
+
+				this.expectCreatedCount(paths.length);
+			},
+			expectCreatedCount(expectedCount) {
+				assert.equal(
+					state.wrappersCreatedByAction.length,
+					expectedCount,
+					`Expected ${expectedCount} created wrapper(s), got ${state.wrappersCreatedByAction.length}.`,
+				);
+			},
+			expectStatus(status, path) {
+				const audio = findTargetAudio(state, path);
+				const wrapper = findWrapperForAudio(state, audio);
+				assert.ok(wrapper, `Expected a voice note wrapper for ${audio.path}.`);
+				assert.equal(
+					getTranscriptStatus(state.app.app, wrapper),
+					status,
+					`Expected ${audio.path} wrapper status ${status}.`,
+				);
+			},
+			expectGeneratedTitle(path) {
+				const audio = findTargetAudio(state, path);
+				const wrapper = findWrapperForAudio(state, audio);
+				assert.ok(wrapper, `Expected a voice note wrapper for ${audio.path}.`);
+				assert.equal(wrapper.basename, generatedTitleFor(audio.path), `Expected ${audio.path} wrapper to use a generated title.`);
+			},
+			expectTranscriptReturnedForRecording(path) {
+				const audio = findTargetAudio(state, path);
+				const wrapper = findWrapperForAudio(state, audio);
+				assert.ok(wrapper, `Expected a voice note wrapper for ${audio.path}.`);
+				assert.match(
+					state.app.readText(wrapper.path),
+					new RegExp(escapeRegExp(transcriptFor(audio.path))),
+					`Expected ${audio.path} wrapper to contain the transcript returned for its recording.`,
+				);
+			},
+		},
+		editor: {
+			expectNoInsertedLink() {
+				assert.equal(state.insertedLinks.length, 0, "Expected no hyperlink to be inserted.");
+			},
+		},
+		workspace: {
+			expectNoOpenedFile() {
+				assert.equal(state.openedFiles.length, 0, "Expected no transcription note to be opened.");
+			},
+			expectOpenedWrapper(path) {
+				assert.ok(
+					state.openedFiles.includes(path),
+					`Expected the transcription note for ${path} to be opened.`,
+				);
+			},
+		},
+		notifications: {
+			expectEmitted() {
+				assert.ok(state.notifications.length > 0, "Expected an Obsidian notification pop-up to be emitted.");
+			},
 		},
 	};
 }
 
-function createWrapperApi(state: TestingState): PluginTestingApi["wrapper"] {
-	return {
-		expectCreated(path) {
-			const audio = findTargetAudio(state, path);
-			expect(audio.wrapperCreated, `Expected a voice note wrapper for ${audio.path}.`);
-		},
-		expectNotCreated(path) {
-			expect(
-				!state.wrappersCreatedByAction.includes(path),
-				`Expected no new voice note wrapper to be created for ${path}.`,
-			);
-		},
-		expectCreatedFor(paths) {
-			for (const path of paths) {
-				this.expectCreated(path);
-			}
+interface FakeObsidianApp {
+	app: App;
+	addAudio(path: string): TFile;
+	addMarkdown(path: string, content: string): TFile;
+	getFile(path: string): TFile;
+	getFiles(): TFile[];
+	readText(path: string): string;
+}
 
-			this.expectCreatedCount(paths.length);
+function createFakeObsidianApp(): FakeObsidianApp {
+	const files = new Map<string, FakeTFile>();
+	const contents = new Map<string, string>();
+
+	const app = {
+		vault: createFakeVault(files, contents),
+		fileManager: {
+			getNewFileParent: () => ({path: "/"}),
+			generateMarkdownLink: (file: TFile): string => `[[${file.path}]]`,
+			renameFile: async (file: TAbstractFile, newPath: string): Promise<void> => {
+				assert.ok(isFile(file), "Expected a file to rename.");
+				const existingContent = contents.get(file.path);
+				files.delete(file.path);
+				contents.delete(file.path);
+				file.path = newPath;
+				file.name = filename(newPath);
+				file.basename = basename(newPath);
+				file.extension = extension(newPath);
+				file.parent = parentForPath(newPath);
+				files.set(newPath, file as FakeTFile);
+				if (existingContent !== undefined) {
+					contents.set(newPath, existingContent);
+				}
+			},
 		},
-		expectCreatedCount(expectedCount) {
-			expect(
-				state.wrappersCreatedByAction.length === expectedCount,
-				`Expected ${expectedCount} created wrapper(s), got ${state.wrappersCreatedByAction.length}.`,
-			);
+		metadataCache: {
+			resolvedLinks: {},
+			getFileCache: (file: TFile) => parseFileCache(contents.get(file.path) ?? ""),
+			getFirstLinkpathDest: (linkpath: string): TFile | null => files.get(linkpath) ?? findByBasename(files, linkpath),
 		},
-		expectStatus(status, path) {
-			const audio = findTargetAudio(state, path);
-			expect(audio.status === status, `Expected ${audio.path} wrapper status ${status}, got ${audio.status ?? "none"}.`);
+		workspace: {
+			getLeaf: () => ({
+				openFile: async () => undefined,
+			}),
 		},
-		expectGeneratedTitle(path) {
-			const audio = findTargetAudio(state, path);
-			expect(audio.title === generatedTitleFor(audio.path), `Expected ${audio.path} wrapper to contain a generated title.`);
+	} as unknown as App;
+
+	return {
+		app,
+		addAudio(path) {
+			return addFile(files, path);
 		},
-		expectTranscriptReturnedForRecording(path) {
-			const audio = findTargetAudio(state, path);
-			expect(
-				audio.transcript === transcriptFor(audio.path),
-				`Expected ${audio.path} wrapper to contain the transcript returned for its recording.`,
-			);
+		addMarkdown(path, content) {
+			const file = addFile(files, path);
+			contents.set(path, content);
+			return file;
+		},
+		getFile(path) {
+			const file = files.get(path);
+			assert.ok(file, `Expected audio file ${path} to exist.`);
+			return file;
+		},
+		getFiles() {
+			return Array.from(files.values());
+		},
+		readText(path) {
+			const content = contents.get(path);
+			assert.ok(content !== undefined, `Expected ${path} to exist.`);
+			return content;
 		},
 	};
 }
 
-function createEditorApi(state: TestingState): PluginTestingApi["editor"] {
+function createFakeVault(files: Map<string, FakeTFile>, contents: Map<string, string>): Partial<Vault> {
 	return {
-		expectNoInsertedLink() {
-			expect(state.insertedLinks.length === 0, "Expected no hyperlink to be inserted.");
+		create: async (path: string, data: string): Promise<TFile> => {
+			const file = addFile(files, path);
+			contents.set(path, data);
+			return file;
 		},
+		modify: async (file: TFile, data: string): Promise<void> => {
+			contents.set(file.path, data);
+		},
+		readBinary: async (file: TFile): Promise<ArrayBuffer> => Uint8Array.from(file.path, charCode).buffer,
+		getAbstractFileByPath: (path: string): TAbstractFile | null => files.get(path) ?? null,
+		getFiles: (): TFile[] => Array.from(files.values()),
+		getMarkdownFiles: (): TFile[] => Array.from(files.values()).filter((file) => file.extension === "md"),
 	};
 }
 
-function createWorkspaceApi(state: TestingState): PluginTestingApi["workspace"] {
-	return {
-		expectNoOpenedFile() {
-			expect(state.openedFiles.length === 0, "Expected no transcription note to be opened.");
-		},
-		expectOpenedWrapper(path) {
-			expect(
-				state.openedFiles.includes(path),
-				`Expected the transcription note for ${path} to be opened.`,
-			);
-		},
-	};
-}
+function createRequestUrlStub(state: TestingState): (request: RequestUrlParam) => Promise<{status: number; text: string}> {
+	return async (request: RequestUrlParam) => {
+		const capturedRequest = request as RequestUrlRequest;
 
-function createNotificationsApi(state: TestingState): PluginTestingApi["notifications"] {
-	return {
-		expectEmitted() {
-			expect(state.notifications.length > 0, "Expected an Obsidian notification pop-up to be emitted.");
-		},
-	};
-}
+		if (capturedRequest.url === OPENROUTER_AUDIO_TRANSCRIPTIONS_URL) {
+			const body = JSON.parse(capturedRequest.body) as {input_audio?: {data?: string}};
+			const audioPath = Buffer.from(body.input_audio?.data ?? "", "base64").toString();
+			state.transcriptionRequests.push(audioPath);
 
-function createMissingWrappers(state: TestingState): void {
-	for (const audio of state.audio) {
-		if (audio.wrapperCreated) {
-			continue;
+			return {
+				status: 200,
+				text: JSON.stringify({text: transcriptFor(audioPath)}),
+			};
 		}
 
-		audio.wrapperCreated = true;
-		audio.status = "raw";
-		audio.title = basename(audio.path);
-		state.wrappersCreatedByAction.push(audio.path);
-	}
-}
+		if (capturedRequest.url === OPENROUTER_CHAT_COMPLETIONS_URL) {
+			const body = JSON.parse(capturedRequest.body) as {response_format?: {json_schema?: {name?: string}}; messages?: unknown[]};
+			if (body.response_format?.json_schema?.name === "transcription_summary") {
+				return {
+					status: 200,
+					text: JSON.stringify({choices: [{message: {content: JSON.stringify({summary: ["Summary point"]})}}]}),
+				};
+			}
 
-function bulkTranscribe(state: TestingState): void {
-	let transcribed = 0;
-
-	for (const audio of state.audio) {
-		if (audio.status === "transcribed") {
-			continue;
+			const transcription = extractTranscriptionFromChatBody(body);
+			const audioPath = transcription.replace(/^Transcript returned for /, "");
+			return {
+				status: 200,
+				text: JSON.stringify({choices: [{message: {content: JSON.stringify({title: generatedTitleFor(audioPath)})}}]}),
+			};
 		}
 
-		markAudioTranscribed(state, audio);
-		transcribed += 1;
-	}
+		throw new Error(`Unexpected request URL: ${capturedRequest.url}`);
+	};
+}
 
-	if (transcribed === 0) {
-		state.notifications.push("No recordings need transcription.");
+function rememberCreatedWrappers(state: TestingState, before: Set<string>): void {
+	for (const candidate of buildRecordingCandidates(state.app.app)) {
+		if (candidate.wrapper && !before.has(candidate.wrapper.path)) {
+			state.wrappersCreatedByAction.push(candidate.audio.path);
+		}
 	}
 }
 
-function transcribeSingle(state: TestingState, path: string): void {
-	const audio = findTargetAudio(state, path);
-
-	if (audio.status !== "transcribed") {
-		markAudioTranscribed(state, audio);
-	}
-
-	state.openedFiles.push(audio.path);
+function markdownPaths(state: TestingState): Set<string> {
+	return new Set(state.app.getFiles().filter((file) => file.extension === "md").map((file) => file.path));
 }
 
-function markAudioTranscribed(state: TestingState, audio: AudioRecord): void {
-	if (!audio.wrapperCreated) {
-		audio.wrapperCreated = true;
-		state.wrappersCreatedByAction.push(audio.path);
-	}
-
-	audio.status = "transcribed";
-	audio.title = generatedTitleFor(audio.path);
-	audio.transcript = transcriptFor(audio.path);
-	state.transcriptionRequests.push(audio.path);
-}
-
-function addAudio(state: TestingState, audio: AudioRecord): void {
-	const existingAudio = state.audio.find((candidate) => candidate.path === audio.path);
-	if (existingAudio) {
-		existingAudio.wrapperCreated = audio.wrapperCreated;
-		existingAudio.status = audio.status;
-		return;
-	}
-
-	state.audio.push(audio);
-}
-
-function findTargetAudio(state: TestingState, path: string | undefined): AudioRecord {
-	const audio = path ? state.audio.find((candidate) => candidate.path === path) : state.audio[0];
-	if (!audio) {
-		throw new Error(path ? `Expected audio file ${path} to exist.` : "Expected at least one audio file to exist.");
-	}
+function findTargetAudio(state: TestingState, path: string | undefined): TFile {
+	const audioFiles = state.app.getFiles().filter((file) => file.extension !== "md");
+	const audio = path ? audioFiles.find((candidate) => candidate.path === path) : audioFiles[0];
+	assert.ok(audio, path ? `Expected audio file ${path} to exist.` : "Expected at least one audio file to exist.");
 
 	return audio;
 }
 
-function basename(path: string): string {
-	return path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? path;
+function findWrapperForAudio(state: TestingState, audio: TFile): TFile | null {
+	return buildRecordingCandidates(state.app.app).find((candidate) => candidate.audio.path === audio.path)?.wrapper ?? null;
 }
 
-function generatedTitleFor(path: string): string {
-	return `Generated title for ${basename(path)}`;
+function audioPathFromWrapper(state: TestingState, wrapper: TFile): string | null {
+	return buildRecordingCandidates(state.app.app).find((candidate) => candidate.wrapper?.path === wrapper.path)?.audio.path ?? null;
+}
+
+function parseFileCache(content: string): {frontmatter?: Record<string, unknown>; headings?: Array<{heading: string}>} {
+	return {
+		frontmatter: parseFrontmatter(content),
+		headings: Array.from(content.matchAll(/^##?\s+(.+)$/gm), (match) => ({heading: match[1]?.trim() ?? ""})),
+	};
+}
+
+function parseFrontmatter(content: string): Record<string, unknown> | undefined {
+	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	if (!match) {
+		return undefined;
+	}
+
+	const frontmatter: Record<string, unknown> = {};
+	for (const line of (match[1] ?? "").split("\n")) {
+		const separatorIndex = line.indexOf(":");
+		if (separatorIndex === -1) {
+			continue;
+		}
+
+		const key = line.slice(0, separatorIndex).trim();
+		const value = line.slice(separatorIndex + 1).trim().replace(/^"(.*)"$/, "$1").replace(/\\"/g, "\"");
+		frontmatter[key] = value;
+	}
+
+	return frontmatter;
+}
+
+function extractTranscriptionFromChatBody(body: {messages?: unknown[]}): string {
+	const message = body.messages?.[0];
+	if (!isRecord(message) || !Array.isArray(message.content)) {
+		return "";
+	}
+
+	const content = message.content as unknown[];
+	const lastContent = content[content.length - 1];
+	return isRecord(lastContent) && typeof lastContent.text === "string" ? lastContent.text : "";
+}
+
+function rawWrapperContent(audio: TFile): string {
+	return [
+		"---",
+		"type: voice-note",
+		`source: "[[${audio.path}]]"`,
+		"status: raw",
+		"---",
+		`# ${audio.basename}`,
+		"## Audio",
+		`![[${audio.path}]]`,
+		"## Transcript",
+		"Not transcribed yet.",
+		"",
+	].join("\n");
+}
+
+function transcribedWrapperContent(audio: TFile): string {
+	return [
+		"---",
+		"type: voice-note",
+		`source: "[[${audio.path}]]"`,
+		"status: transcribed",
+		"---",
+		`# ${audio.basename}`,
+		"## Audio",
+		`![[${audio.path}]]`,
+		"## Transcript",
+		transcriptFor(audio.path),
+		"",
+	].join("\n");
+}
+
+function adjacentWrapperPath(audio: TFile): string {
+	return audio.parent && audio.parent.path !== "/" ? `${audio.parent.path}/${audio.basename}.md` : `${audio.basename}.md`;
 }
 
 function transcriptFor(path: string): string {
 	return `Transcript returned for ${path}`;
 }
 
-function expect(condition: boolean, message: string): void {
-	if (!condition) {
-		throw new Error(message);
+function generatedTitleFor(path: string): string {
+	return `Generated title for ${basename(path)}`;
+}
+
+function stableNow(): Date {
+	return new Date(2026, 4, 10, 9, 8, 7);
+}
+
+function findByBasename(files: Map<string, FakeTFile>, linkpath: string): TFile | null {
+	return Array.from(files.values()).find((file) => file.basename === linkpath || file.path === linkpath) ?? null;
+}
+
+function addFile(files: Map<string, FakeTFile>, path: string): FakeTFile {
+	const file = createFile(path);
+	files.set(path, file);
+	return file;
+}
+
+function createFile(path: string): FakeTFile {
+	return new FakeTFile(path);
+}
+
+function charCode(char: string): number {
+	return char.charCodeAt(0);
+}
+
+function filename(path: string): string {
+	return path.split("/").pop() ?? path;
+}
+
+function basename(path: string): string {
+	return filename(path).replace(/\.[^.]+$/, "");
+}
+
+function extension(path: string): string {
+	return path.split(".").pop() ?? "";
+}
+
+function parentForPath(path: string): TFile["parent"] {
+	const parts = path.split("/");
+	if (parts.length <= 1) {
+		return null;
+	}
+
+	const parentPath = parts.slice(0, -1).join("/");
+	return {path: parentPath || "/"} as TFile["parent"];
+}
+
+function isFile(file: TAbstractFile): file is TFile {
+	return "extension" in file;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+class FakeTFile implements TFile {
+	vault!: Vault;
+	path: string;
+	name: string;
+	parent: TFile["parent"];
+	stat = {ctime: new Date(2026, 4, 9).getTime(), mtime: new Date(2026, 4, 9).getTime(), size: 1};
+	basename: string;
+	extension: string;
+
+	constructor(path: string) {
+		this.path = path;
+		this.name = filename(path);
+		this.parent = parentForPath(path);
+		this.basename = basename(path);
+		this.extension = extension(path);
 	}
 }

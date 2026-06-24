@@ -7,7 +7,7 @@ void test("testing API assertions fail with useful messages", () => {
 	const api = createPluginTestingApi();
 
 	assert.throws(
-		() => api.wrapper.expectCreated("Recordings/missing.m4a"),
+		() => api.then.wrapper.expectCreated("Recordings/missing.m4a"),
 		/Expected audio file Recordings\/missing\.m4a to exist/,
 	);
 });
@@ -15,51 +15,51 @@ void test("testing API assertions fail with useful messages", () => {
 void test("testing API models explicit wrapper creation from the ribbon action", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addUnwrappedAudio("Recordings/idea.m4a");
+	api.given.unwrappedAudio("Recordings/idea.m4a");
 
-	await api.plugin.createMissingRecordingWrappers();
+	await api.when.createMissingRecordingWrappers();
 
-	api.wrapper.expectCreated();
-	api.wrapper.expectCreatedCount(1);
-	api.wrapper.expectStatus("raw");
-	api.editor.expectNoInsertedLink();
-	api.workspace.expectNoOpenedFile();
+	api.then.wrapper.expectCreated();
+	api.then.wrapper.expectCreatedCount(1);
+	api.then.wrapper.expectStatus("raw");
+	api.then.editor.expectNoInsertedLink();
+	api.then.workspace.expectNoOpenedFile();
 });
 
 void test("testing API skips recordings that already have wrappers", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addWrappedAudio("Recordings/idea.m4a");
+	api.given.wrappedAudio("Recordings/idea.m4a");
 
-	await api.plugin.createMissingRecordingWrappers();
+	await api.when.createMissingRecordingWrappers();
 
-	api.wrapper.expectCreatedCount(0);
+	api.then.wrapper.expectCreatedCount(0);
 });
 
 void test("testing API models File Transcribe all from the ribbon action", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addUnwrappedAudio("Recordings/idea.m4a");
+	api.given.unwrappedAudio("Recordings/idea.m4a");
 
-	const modal = await api.plugin.fileTranscribe();
+	const modal = await api.when.fileTranscribe();
 	await modal.transcribeAll();
 
-	api.wrapper.expectCreated();
-	api.wrapper.expectCreatedCount(1);
-	api.transcription.expectRequestCount(1);
-	api.wrapper.expectStatus("transcribed");
-	api.editor.expectNoInsertedLink();
-	api.workspace.expectNoOpenedFile();
+	api.then.wrapper.expectCreated();
+	api.then.wrapper.expectCreatedCount(1);
+	api.then.transcription.expectRequestCount(1);
+	api.then.wrapper.expectStatus("transcribed");
+	api.then.editor.expectNoInsertedLink();
+	api.then.workspace.expectNoOpenedFile();
 });
 
 void test("testing API skips recordings that are already transcribed", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addTranscribedAudio("Recordings/idea.m4a");
+	api.given.transcribedAudio("Recordings/idea.m4a");
 
-	const modal = await api.plugin.fileTranscribe();
+	const modal = await api.when.fileTranscribe();
 	await modal.transcribeAll();
 
-	api.wrapper.expectCreatedCount(0);
-	api.transcription.expectNoRequest();
+	api.then.wrapper.expectCreatedCount(0);
+	api.then.transcription.expectNoRequest();
 });

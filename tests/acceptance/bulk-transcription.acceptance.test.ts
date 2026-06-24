@@ -10,81 +10,81 @@ for (const entryPoint of fileTranscribeEntryPoints) {
 		const paths = ["Recordings/2025.m4a", "Recordings/2026.m4a"];
 
 		for (const path of paths) {
-			api.vault.addUnwrappedAudio(path);
+			api.given.unwrappedAudio(path);
 		}
 
-		const modal = await api.plugin.fileTranscribe(entryPoint);
+		const modal = await api.when.fileTranscribe(entryPoint);
 		await modal.transcribeAll();
 
-		api.transcription.expectRequests(paths);
-		api.wrapper.expectCreatedFor(paths);
+		api.then.transcription.expectRequests(paths);
+		api.then.wrapper.expectCreatedFor(paths);
 
 		for (const path of paths) {
-			api.wrapper.expectGeneratedTitle(path);
-			api.wrapper.expectTranscriptReturnedForRecording(path);
-			api.wrapper.expectStatus("transcribed", path);
+			api.then.wrapper.expectGeneratedTitle(path);
+			api.then.wrapper.expectTranscriptReturnedForRecording(path);
+			api.then.wrapper.expectStatus("transcribed", path);
 		}
 
-		api.editor.expectNoInsertedLink();
-		api.workspace.expectNoOpenedFile();
+		api.then.editor.expectNoInsertedLink();
+		api.then.workspace.expectNoOpenedFile();
 	});
 }
 
 void test("user uses File Transcribe all and skips already transcribed recordings", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addUnwrappedAudio("Recordings/idea.m4a");
-	api.vault.addTranscribedAudio("Recordings/done.m4a");
+	api.given.unwrappedAudio("Recordings/idea.m4a");
+	api.given.transcribedAudio("Recordings/done.m4a");
 
-	const modal = await api.plugin.fileTranscribe("ribbon button");
+	const modal = await api.when.fileTranscribe("ribbon button");
 	await modal.transcribeAll();
 
-	api.transcription.expectRequest("Recordings/idea.m4a");
-	api.transcription.expectNoRequestFor("Recordings/done.m4a");
-	api.wrapper.expectCreated("Recordings/idea.m4a");
-	api.wrapper.expectNotCreated("Recordings/done.m4a");
+	api.then.transcription.expectRequest("Recordings/idea.m4a");
+	api.then.transcription.expectNoRequestFor("Recordings/done.m4a");
+	api.then.wrapper.expectCreated("Recordings/idea.m4a");
+	api.then.wrapper.expectNotCreated("Recordings/done.m4a");
 });
 
 void test("user chooses a single unwrapped recording without inserting an editor link", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addUnwrappedAudio("Recordings/idea.m4a");
+	api.given.unwrappedAudio("Recordings/idea.m4a");
 
-	const modal = await api.plugin.fileTranscribe("command palette button");
+	const modal = await api.when.fileTranscribe("command palette button");
 	await modal.chooseRecording("Recordings/idea.m4a");
 
-	api.transcription.expectRequest("Recordings/idea.m4a");
-	api.wrapper.expectCreated("Recordings/idea.m4a");
-	api.wrapper.expectGeneratedTitle("Recordings/idea.m4a");
-	api.wrapper.expectTranscriptReturnedForRecording("Recordings/idea.m4a");
-	api.wrapper.expectStatus("transcribed", "Recordings/idea.m4a");
-	api.editor.expectNoInsertedLink();
-	api.workspace.expectOpenedWrapper("Recordings/idea.m4a");
+	api.then.transcription.expectRequest("Recordings/idea.m4a");
+	api.then.wrapper.expectCreated("Recordings/idea.m4a");
+	api.then.wrapper.expectGeneratedTitle("Recordings/idea.m4a");
+	api.then.wrapper.expectTranscriptReturnedForRecording("Recordings/idea.m4a");
+	api.then.wrapper.expectStatus("transcribed", "Recordings/idea.m4a");
+	api.then.editor.expectNoInsertedLink();
+	api.then.workspace.expectOpenedWrapper("Recordings/idea.m4a");
 });
 
 void test("user chooses a single already-transcribed recording without sending a transcription request", async () => {
 	const api = createPluginTestingApi();
 
-	api.vault.addTranscribedAudio("Recordings/done.m4a");
+	api.given.transcribedAudio("Recordings/done.m4a");
 
-	const modal = await api.plugin.fileTranscribe("command palette button");
+	const modal = await api.when.fileTranscribe("command palette button");
 	await modal.chooseRecording("Recordings/done.m4a");
 
-	api.transcription.expectNoRequest();
-	api.wrapper.expectNotCreated("Recordings/done.m4a");
-	api.editor.expectNoInsertedLink();
-	api.workspace.expectOpenedWrapper("Recordings/done.m4a");
+	api.then.transcription.expectNoRequest();
+	api.then.wrapper.expectNotCreated("Recordings/done.m4a");
+	api.then.editor.expectNoInsertedLink();
+	api.then.workspace.expectOpenedWrapper("Recordings/done.m4a");
 });
 
 void test("user opens File Transcribe and sees an empty-state notice when there are no matching recordings", async () => {
 	const api = createPluginTestingApi();
 
-	const modal = await api.plugin.fileTranscribe("ribbon button");
+	const modal = await api.when.fileTranscribe("ribbon button");
 	await modal.transcribeAll();
 
-	api.transcription.expectNoRequest();
-	api.wrapper.expectCreatedCount(0);
-	api.editor.expectNoInsertedLink();
-	api.workspace.expectNoOpenedFile();
-	api.notifications.expectEmitted();
+	api.then.transcription.expectNoRequest();
+	api.then.wrapper.expectCreatedCount(0);
+	api.then.editor.expectNoInsertedLink();
+	api.then.workspace.expectNoOpenedFile();
+	api.then.notifications.expectEmitted();
 });

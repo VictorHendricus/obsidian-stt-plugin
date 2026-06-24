@@ -18,7 +18,10 @@
 		"complexity": "eslint src tests --rule 'complexity: [\"error\", 8]'",
 		"crap": "node node_modules/crap4ts/dist/cli.js --coverage coverage/coverage-final.json --src src --include 'src/audio-files.ts' 'src/note-titles.ts' 'src/openrouter.ts' --threshold 30 --coverage-metric branch",
 		"duplication": "jscpd",
-		"quality": "npm run build && npm run lint && npm run test && npm run test-api:audit && npm run coverage && npm run complexity && npm run crap && npm run duplication",
+		"quality": "npm run build && npm run lint && npm run test && npm run coverage && npm run complexity && npm run crap",
+		"integrity": "npm run duplication && npm run test-api:audit",
+		"integrity:deep": "npm run integrity && npm run mutation",
+		"check": "npm run quality && npm run integrity",
 		"test:integration": "node --env-file=.env.test --experimental-strip-types --test tests/integration/*.test.ts",
 		"push": "cp main.js manifest.json styles.css '/home/oleksii/Documents/Bibliotheka/.obsidian/plugins/test-plugin'"
 	},

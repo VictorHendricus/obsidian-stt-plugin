@@ -260,12 +260,12 @@ Before marking work complete, run the project quality gate.
 
 Required checks:
 
-1. Lint
-2. Tests
-3. Coverage
-4. Cyclomatic complexity
-5. CRAP index
-6. Duplication detection
+1. Build
+2. Lint
+3. Tests
+4. Coverage
+5. Cyclomatic complexity
+6. CRAP index
 
 Required command:
 
@@ -278,7 +278,6 @@ Thresholds:
 - Coverage >= 80%
 - Cyclomatic complexity <= 6
 - CRAP index <= 30
-- Duplication <= 3%
 
 Rules:
 
@@ -287,26 +286,42 @@ Rules:
 - Do not lower thresholds to make the gate pass.
 - Do not skip tests to make the gate pass.
 - Do not exclude source files from coverage unless they are generated, vendored, or non-runtime files.
-- Do not suppress complexity, CRAP, or duplication violations without refactoring.
+- Do not suppress complexity or CRAP violations without refactoring.
 - If a gate cannot run because tooling is unavailable, report the exact failure.
 
-## Mutation testing
+## Integrity Gates
 
-When asked by the user run:
+Run integrity checks after feature implementation work and explicit refactoring or cleanup work.
 
 ```bash
-npm run mutation
+npm run integrity
 ```
 
-Threshold:
+Integrity checks cover repository drift rather than basic implementation correctness:
 
+- Duplication detection
+- Testing API audit
+
+For deeper test-suite strength checks, run:
+
+```bash
+npm run integrity:deep
+```
+
+Deep integrity includes mutation testing.
+
+Thresholds:
+
+- Duplication <= 3%
 - Total mutation score >= 75%
 - Covered mutation score >= 75%
 
-Stryker config:
-high: 80, low: 75, break: 75
+Rules:
 
-After running kill mutants
+- Delete testing API helpers when `npm run test-api:audit` reports them unused.
+- Review helpers that are used only by `plugin-testing-api.test.ts`; they need a real feature scenario or removal.
+- Do not suppress duplication violations without refactoring.
+- Do not lower mutation thresholds to make the gate pass.
 
 # Constraints
 
@@ -327,7 +342,6 @@ After running kill mutants
   - `api.when.*` for user-visible actions
   - `api.then.*` for observable outcomes
 - Do not add testing API helpers that do not map to `Given`, `When`, or `Then`. Prefer a unit test helper or production abstraction instead.
-- Delete testing API helpers when `npm run test-api:audit` reports them unused; review helpers that are used only by `plugin-testing-api.test.ts`.
 - Unit tests can call production modules directly when behavior is local and deterministic.
 
 

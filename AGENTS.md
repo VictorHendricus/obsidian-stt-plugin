@@ -318,6 +318,16 @@ After running kill mutants
 
 # Features
 
+- User-facing feature work should have both:
+  - a Gherkin specification in `features/`
+  - an acceptance test in `tests/acceptance/` that interacts through `src/testing/plugin-testing-api.ts`
+- Acceptance tests should read like feature scenarios and use the testing API instead of private implementation details.
+- The testing API must stay in Given/When/Then shape:
+  - `api.given.*` for feature preconditions
+  - `api.when.*` for user-visible actions
+  - `api.then.*` for observable outcomes
+- Do not add testing API helpers that do not map to `Given`, `When`, or `Then`. Prefer a unit test helper or production abstraction instead.
+- Unit tests can call production modules directly when behavior is local and deterministic.
 
 
 # Hints
